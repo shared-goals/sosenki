@@ -32,36 +32,10 @@ export TELEGRAM_BOT_NAME
 export TELEGRAM_MINI_APP_ID
 export ENV
 
-.PHONY: help seed test lint format sync install preflight serve stop db-reset backup restore dead-code coverage coverage-seeding check-i18n clean
+.PHONY: help seed test lint format sync install preflight serve stop db-reset backup restore dead-code coverage coverage-seeding check-i18n clean restart
 
-help:
-	@echo "SOSenki Commands"
-	@echo ""
-	@echo "Production Deployment (Linux server):"
-	@echo "  make install           Full production setup (run with sudo)"
-	@echo "  make upgrade           Apply schema migrations with auto-backup (prod only)"
-	@echo ""
-	@echo "Development:"
-	@echo "  make sync              Install Python dependencies via uv"
-	@echo "  make serve             Run bot + mini app with webhook (auto-stops existing)"
-	@echo "  make stop              Stop any running server on configured port"
-	@echo "  make test              Run all tests (auto-stops server first)"
-	@echo "  make test-seeding      Run seeding tests only"
-	@echo "  make lint              Check code style with ruff"
-	@echo "  make format            Format code with ruff and prettier"
-	@echo "  make check-i18n        Validate translation completeness"
-	@echo "  make dead-code         Analyze dead code with vulture and custom scripts"
-	@echo "  make coverage          Generate coverage report for src/ tests"
-	@echo ""
-	@echo "Database:"
-	@echo "  make seed              Seed database from Google Sheets (dev only)"
-	@echo "  make db-reset          Drop and recreate database (dev only)"
-	@echo "  make backup            Create timestamped database backup (prod only)"
-	@echo "  make restore           Restore from latest backup (prod only)"
-	@echo ""
-	@echo "Maintenance:"
-	@echo "  make clean             Remove generated artifacts (coverage, cache, logs)"
-	@echo ""
+help: ## Show available make targets
+	@awk 'BEGIN {FS=":.*##"; printf "\nTargets:\n"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # ============================================================================
 # Production Deployment
@@ -69,7 +43,7 @@ help:
 
 # Preflight checks (used by install and can be run standalone)
 # Checks differ based on ENV: dev or prod
-preflight:
+preflight: ## Run preflight checks for target ENV
 	@echo "====== SOSenki Preflight Checks (ENV=$(ENV)) ======"
 	@echo ""
 	@echo "Step 1: Check uv installed..."
@@ -141,7 +115,7 @@ preflight:
 # 2. Run install: sudo make install
 #    - This installs systemd service and configures Caddy
 #    - Preflight must be run first to ensure uv sync and ollama pull are done
-install:
+install: ## Install production service (preflight must run first)
 	@echo ""
 	@echo "====== SOSenki Production Install ======"
 	@echo ""
@@ -200,22 +174,22 @@ install:
 # ============================================================================
 
 # Install Python dependencies (dev)
-sync:
+sync: ## Install/update Python dependencies (dev)
 	uv sync
 
-test: stop
+test: stop ## Run tests (stops server before running)
 	uv run pytest tests/ -v
 
-test-seeding:
+test-seeding: ## Run seeding-specific tests
 	uv run pytest seeding/tests/ -v
 
-lint:
+lint: ## Run lint checks via ruff
 	uv run ruff check .
 
-check-i18n:
+check-i18n: ## Validate translations definitions
 	uv run python scripts/check_translations.py
 
-format:
+format: ## Format code with ruff
 	uv run ruff check . --fix
 	uv run ruff format .
 
@@ -231,7 +205,7 @@ format:
 # Credentials: credentials.json (from Google Cloud service account)
 # NOTE: db-reset is a prerequisite and will run automatically
 # BLOCKED in production: seed modifies runtime data, only use in dev
-seed: db-reset
+seed: db-reset ## Seed dev database from Google Sheets
 	@if [ "$(ENV)" = "prod" ]; then \
 		echo "❌ seed is blocked in production. Production data is only modified via restore from backup."; \
 		exit 1; \
@@ -251,7 +225,7 @@ seed: db-reset
 # IMPORTANT: Application MUST be offline when running this command
 # This will delete all data and recreate fresh schema
 # BLOCKED in production: use restore from backup instead
-db-reset:
+db-reset: ## Reset dev database (drop + recreate)
 	@if [ "$(ENV)" = "prod" ]; then \
 		echo "❌ db-reset is blocked in production. Use 'make restore' to restore from backup."; \
 		exit 1; \
@@ -273,13 +247,13 @@ db-reset:
 # - vulture: Static analysis with confidence threshold (80%)
 # - analyze_dead_code.py: Custom analysis script for project-specific patterns
 # Output helps identify refactoring opportunities and code cleanup targets
-dead-code:
+dead-code: ## Analyze dead code with vulture and custom script
 	@echo "Analyzing dead code..."
 	uv run vulture src/ --min-confidence 80
 	uv run python scripts/analyze_dead_code.py
 
 # Coverage report (src/ tests only, excluding seeding)
-coverage:
+coverage: ## Run coverage report for src/ tests
 	uv run pytest tests/ --cov=src --cov-report=term-missing --cov-report=html -q
 	@echo ""
 	@echo "✓ Coverage report complete"
@@ -289,7 +263,7 @@ coverage:
 
 # Stop any running server on the configured port
 # This is automatically called by serve and test targets
-stop:
+stop: ## Stop running server on configured port
 	@PORT=$$(grep '^PORT=' .env 2>/dev/null | cut -d'=' -f2); \
 	if [ -z "$$PORT" ]; then \
 		echo "ERROR: PORT not found in .env file"; \
@@ -306,7 +280,7 @@ stop:
 # Run bot + mini app in webhook mode with ngrok tunnel
 # Automatically starts Ollama (if not running), ngrok tunnel, and loads environment variables (dynamic + static from .env)
 # Kills any existing process on configured port if address is already in use
-serve: stop
+serve: stop ## Run bot + mini app webhook environment
 	@echo "🔍 Checking Ollama service..."
 	@if ! pgrep -f "ollama serve" > /dev/null; then \
 		echo "❌ Ollama is not running. Starting..."; \
@@ -329,7 +303,7 @@ serve: stop
 	uv run python -m src.main --mode webhook
 
 # Clean generated artifacts
-clean:
+clean: ## Remove generated artifacts (cache, coverage, logs)
 	@echo "Cleaning generated artifacts..."
 	rm -rf .pytest_cache __pycache__
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
@@ -345,7 +319,7 @@ clean:
 # Apply schema migrations (prod only)
 # Automatically creates backup before applying migrations
 # Safe workflow: backup → migrate → prompt to restart service
-upgrade: backup
+upgrade: backup ## Apply production schema migrations (runs backup first)
 	@if [ "$(ENV)" != "prod" ]; then \
 		echo "⚠️  upgrade is for production only. In dev, migrations auto-apply with 'make serve'."; \
 		exit 1; \
@@ -377,11 +351,15 @@ upgrade: backup
 		echo "⚠️  Remember to restart: sudo systemctl restart sosenki"; \
 	fi
 
+restart: ## Restart the sosenki systemd service
+	@echo "Restarting sosenki service..."
+	sudo systemctl restart sosenki
+	
 # Database backup with timestamped filename (prod only)
 # Creates backups/sosenki-YYYYMMDD-HHMMSS.db, keeps last 30 backups
 # Only creates backup if database differs from last backup (uses diff)
 # BLOCKED in dev: dev databases don't need backups (can be reset anytime)
-backup:
+backup: ## Backup prod database (prod-only, keeps last 30)
 	@if [ "$(ENV)" != "prod" ]; then \
 		echo "⚠️  backup is not needed in dev (database can be reset anytime). Use 'make db-reset' instead."; \
 		exit 1; \
@@ -412,7 +390,7 @@ backup:
 # Restore database from backup (prod only)
 # Usage: make restore              (restores latest)\n#        make restore BACKUP=backups/sosenki-20251205-120000.db
 # BLOCKED in dev: use 'make db-reset' instead
-restore:
+restore: ## Restore production database from backup (prod-only)
 	@if [ "$(ENV)" != "prod" ]; then \
 		echo "⚠️  restore is not needed in dev. Use 'make db-reset' to reset development database."; \
 		exit 1; \
