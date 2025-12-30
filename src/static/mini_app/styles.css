@@ -1195,6 +1195,17 @@ body {
     background: var(--color-error-bg);
 }
 
+.balance-suggestion {
+    display: none;
+    margin-top: var(--spacing-xs);
+    padding: var(--spacing-xs) var(--spacing-md);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    text-align: center;
+    background: var(--color-info-bg);
+    color: var(--color-info);
+}
+
 /* ==========================================================================
    ACCOUNTS PAGE
    ========================================================================== */

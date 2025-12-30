@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models.account import Account
+from src.models.account import Account, AccountType
 from src.models.transaction import Transaction
 from src.models.user import User
 from src.services import get_async_session
@@ -22,6 +22,7 @@ from src.services.auth_service import (
     get_authenticated_user,
     verify_telegram_auth,
 )
+from src.services.transaction_service import TransactionService
 from src.services.user_service import UserService, UserStatusService
 
 logger = logging.getLogger(__name__)
@@ -811,6 +812,7 @@ class AccountResponse(BaseModel):
 
     balance: float  # Raw balance value
     invert_for_display: bool = False  # True for OWNER accounts (display negated value)
+    suggested_payment: int | None = None  # Suggested owner payment when debt exists
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -836,6 +838,39 @@ class AccountsResponse(BaseModel):
     accounts: list[AccountItem]
 
     model_config = ConfigDict(from_attributes=True)
+
+
+async def _fetch_primary_organization_account(session: AsyncSession) -> Account | None:
+    """Return the primary organization account (used for owner debt suggestions)."""
+
+    stmt = (
+        select(Account)
+        .where(Account.account_type == AccountType.ORGANIZATION)
+        .order_by(Account.id)
+        .limit(1)
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def _calculate_owner_suggested_payment(
+    session: AsyncSession,
+    transaction_service: TransactionService,
+    owner_account: Account,
+    balance: float,
+    invert_for_display: bool,
+) -> int | None:
+    """Return a suggested payment amount for owners with debt."""
+
+    if not invert_for_display or balance <= 0:
+        return None
+
+    org_account = await _fetch_primary_organization_account(session)
+    if not org_account:
+        return None
+
+    suggested = await transaction_service.calculate_suggested_amount(owner_account, org_account)
+    return suggested if suggested > 0 else None
 
 
 @router.post("/account", response_model=AccountResponse)
@@ -871,17 +906,28 @@ async def get_account(
         # Get authenticated user (checks is_active)
         authenticated_user = await get_authenticated_user(session, telegram_id)
 
-        # Authorize account access
-        await authorize_account_access(session, authenticated_user, account_id)
+        # Authorize account access and reuse the account object
+        account = await authorize_account_access(session, authenticated_user, account_id)
 
         # Calculate balance using service
         from src.services.balance_service import BalanceCalculationService
 
         balance_service = BalanceCalculationService(session)
-        result = await balance_service.calculate_account_balance_with_display(account_id)
+        result = await balance_service.calculate_account_balance_with_display(account.id)
+
+        transaction_service = TransactionService(session)
+        suggested_payment = await _calculate_owner_suggested_payment(
+            session,
+            transaction_service,
+            account,
+            result.balance,
+            result.invert_for_display,
+        )
 
         response = AccountResponse(
-            balance=result.balance, invert_for_display=result.invert_for_display
+            balance=result.balance,
+            invert_for_display=result.invert_for_display,
+            suggested_payment=suggested_payment,
         )
 
         _log_debug(
@@ -891,6 +937,7 @@ async def get_account(
             authenticated_user,
             account_id=account_id,
             balance=f"{result.balance:.2f}",
+            suggested_payment=suggested_payment or "-",
         )
         return response
 

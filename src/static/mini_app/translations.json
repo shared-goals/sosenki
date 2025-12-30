@@ -66,7 +66,7 @@
   "hint_debt_and_payout": "Текущий долг: {debt}\nРекомендуемый взнос: {payout}",
   "hint_previous_value": " (предыдущее: {value})",
   "hint_start_date_first_of_month": "Дата начала должна быть первым числом месяца",
-  "hint_suggested_amount": "Предлагаемая сумма: {amount}",
+  "hint_suggested_amount": "Предлагается к оплате: {amount}",
   "label_access_denied_instruction": "Для получения доступа к SOSenki отправьте <code>/request</code> боту.",
   "label_bill_conservation": "🏘️ Консервация",
   "label_bill_electricity": "⚡ Электричество",

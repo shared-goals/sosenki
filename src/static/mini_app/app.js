@@ -1211,14 +1211,13 @@ async function loadAccountDetails(accountId) {
         const balanceResp = await fetchWithTmaAuth(balanceUrl, initData);
         if (balanceResp.ok) {
             const balanceData = await balanceResp.json();
-            // Render balance with inversion for account details page
-            const displayBalance = balanceData.invert_for_display ? -balanceData.balance : balanceData.balance;
-            const balanceEl = document.getElementById('account-balance-value');
-            if (balanceEl) {
-                const formatted = formatCurrency(Math.abs(displayBalance));
-                const balanceClass = displayBalance >= 0 ? 'positive' : 'negative';
-                balanceEl.className = `balance-value ${balanceClass}`;
-                balanceEl.textContent = `${displayBalance >= 0 ? '+' : '-'}${formatted}`;
+            if (balanceData.balance !== undefined) {
+                renderBalance(
+                    balanceData.balance,
+                    balanceData.invert_for_display || false,
+                    balanceData.suggested_payment,
+                    'account-balance-container'
+                );
             }
         }
         
@@ -1277,7 +1276,11 @@ async function loadBalance() {
         const data = await response.json();
         
         if (data.balance !== undefined) {
-            renderBalance(data.balance, data.invert_for_display || false);
+            renderBalance(
+                data.balance,
+                data.invert_for_display || false,
+                data.suggested_payment
+            );
         }
         
     } catch (error) {
@@ -1289,9 +1292,15 @@ async function loadBalance() {
  * Render balance into the balance-container
  * @param {number} balance - Balance amount (raw value)
  * @param {boolean} invert - Whether to invert the display value (for OWNER accounts)
+ * @param {number|null} suggestedPayment - Suggested payment amount to show when owning debt
  * @param {string} containerId - Optional container ID (defaults to 'balance-container')
  */
-function renderBalance(balance, invert = false, containerId = 'balance-container') {
+function renderBalance(
+    balance,
+    invert = false,
+    suggestedPayment = null,
+    containerId = 'balance-container'
+) {
     const container = document.getElementById(containerId);
     
     if (!container) {
@@ -1312,6 +1321,19 @@ function renderBalance(balance, invert = false, containerId = 'balance-container
         const balanceClass = displayBalance >= 0 ? 'positive' : 'negative';
         balanceValue.className = `balance-value ${balanceClass}`;
         balanceValue.textContent = `${displayBalance >= 0 ? '+' : '-'}${formatted}`;
+    }
+
+    const suggestionEl = container.querySelector('.balance-suggestion');
+    if (suggestionEl) {
+        const shouldShowSuggestion = invert && balance > 0 && suggestedPayment;
+        if (shouldShowSuggestion) {
+            suggestionEl.textContent = t('hint_suggested_amount', {
+                amount: formatCurrency(suggestedPayment),
+            });
+            suggestionEl.style.display = 'block';
+        } else {
+            suggestionEl.style.display = 'none';
+        }
     }
 }
 
