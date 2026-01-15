@@ -1,9 +1,9 @@
 # ============================================================================
 # Roadmap (commit-based milestones)
 # ============================================================================
+# TODO feat: Invest tracking module
 # TODO feat: Make balance for staff with generated bills as salaries
 # TODO feat: Adopt dev environment in the LAN with prod - edit caddy template for dev host and 8443 port
-# TODO feat: Invest tracking module
 # TODO security: Add auth_date expiration check (±5min) in user_service.py - replay attack risk
 # TODO security: Use hmac.compare_digest() in user_service.py - timing attack risk
 # TODO security: Add rate limiting (slowapi) to API endpoints - DoS/brute force risk

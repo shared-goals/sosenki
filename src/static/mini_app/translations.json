@@ -118,6 +118,8 @@
   "msg_request_rejected": "✅ Запрос отклонен и клиент уведомлен",
   "msg_starting_budget": "Переход к вводу бюджетов...",
   "msg_starting_readings": "Переход к вводу показаний...",
+  "msg_start_available_commands": "Доступные команды:\n{commands}",
+  "msg_start_welcome": "Добро пожаловать в SOSenki! 🏠",
   "msg_transaction_confirm": "📋 Новая транзакция:\n\n<b>От:</b> {from_name}\n<b>Кому:</b> {to_name}\n<b>Сумма:</b> {amount}\n<b>Дата:</b> {date}\n<b>Описание:</b> {description}\n\nСоздать транзакцию?",
   "msg_transaction_created": "✅ Транзакция создана:\n\n<b>{description}</b>\n\nДата: {date}",
   "msg_user_approved": "✅ Пользователь {user_id} одобрен и Telegram ID назначен",

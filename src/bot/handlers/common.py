@@ -10,6 +10,7 @@ from src.services.localizer import t
 from src.services.notification_service import NotificationService
 from src.services.request_service import RequestService
 from src.services.user_service import UserService
+from src.bot.handlers.ask import is_llm_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -20,12 +21,39 @@ async def handle_start_command(update: Update, context: ContextTypes.DEFAULT_TYP
     Sends welcome message to user.
     """
     try:
-        if not update.message:
+        if not update.message or not update.message.from_user:
             logger.warning("Received /start without message")
             return
 
-        await update.message.reply_text(t("msg_welcome"))
-        logger.info("Sent welcome message to user %s", update.message.from_user.id)
+        telegram_id = update.message.from_user.id
+
+        user = None
+        try:
+            async with AsyncSessionLocal() as session:
+                user_service = UserService(session)
+                user = await user_service.get_by_telegram_id(telegram_id)
+        except Exception as e:
+            logger.error("Failed to load user for /start: %s", e, exc_info=True)
+
+        commands: list[str] = ["/request"]
+
+        if user and user.is_active:
+            if is_llm_enabled():
+                commands.append("/ask")
+
+            if user.is_administrator:
+                commands.extend(["/bills", "/periods", "/payout", "/meter"])
+            elif user.is_staff:
+                commands.append("/meter")
+
+        commands_text = "\n".join(f"• {command}" for command in commands)
+        welcome_message = (
+            t("msg_start_welcome") if user and user.is_active else t("msg_welcome")
+        )
+        message = f"{welcome_message}\n\n{t('msg_start_available_commands', commands=commands_text)}"
+
+        await update.message.reply_text(message)
+        logger.info("Sent welcome message to user %s", telegram_id)
 
     except Exception as e:
         logger.error("Error in start command handler: %s", e, exc_info=True)
