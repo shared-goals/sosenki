@@ -5,12 +5,12 @@ import logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
 from telegram.ext import ContextTypes
 
+from src.bot.handlers.ask import is_llm_enabled
 from src.services import AsyncSessionLocal
 from src.services.localizer import t
 from src.services.notification_service import NotificationService
 from src.services.request_service import RequestService
 from src.services.user_service import UserService
-from src.bot.handlers.ask import is_llm_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +47,10 @@ async def handle_start_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 commands.append("/meter")
 
         commands_text = "\n".join(f"• {command}" for command in commands)
-        welcome_message = (
-            t("msg_start_welcome") if user and user.is_active else t("msg_welcome")
+        welcome_message = t("msg_start_welcome") if user and user.is_active else t("msg_welcome")
+        message = (
+            f"{welcome_message}\n\n{t('msg_start_available_commands', commands=commands_text)}"
         )
-        message = f"{welcome_message}\n\n{t('msg_start_available_commands', commands=commands_text)}"
 
         await update.message.reply_text(message)
         logger.info("Sent welcome message to user %s", telegram_id)
@@ -97,9 +97,14 @@ async def handle_request_command(  # noqa: C901
         text_parts = update.message.text.split(maxsplit=1)
         request_message = text_parts[1] if len(text_parts) > 1 else ""
 
+        if not update.message.from_user:
+            logger.warning("Received /request without from_user")
+            return
+
         requester_id = update.message.from_user.id
 
-        # Build requester identifier: prefer username, then first+last name, then phone, then user_id
+        # Build requester identifier: prefer username, then first+last name, then user_id
+        requester_username: str
         if update.message.from_user.username:
             requester_username = update.message.from_user.username
         elif update.message.from_user.first_name:
@@ -109,10 +114,8 @@ async def handle_request_command(  # noqa: C901
                 )
             else:
                 requester_username = update.message.from_user.first_name
-        elif update.message.from_user.phone_number:
-            requester_username = update.message.from_user.phone_number
         else:
-            requester_username = requester_id
+            requester_username = str(requester_id)
 
         # T034: Log request submission attempt
         logger.info(
@@ -160,15 +163,17 @@ async def handle_request_command(  # noqa: C901
                 return
 
             # T029: Send confirmation to requester
-            notification_service = NotificationService(context.application)
-            await notification_service.send_confirmation_to_requester(requester_id=requester_id)
+            notification_service = NotificationService(context.application)  # type: ignore[arg-type]
+            await notification_service.send_confirmation_to_requester(
+                requester_id=str(requester_id)
+            )
             logger.info("Sent confirmation to requester %s", requester_id)
 
             # T030: Send admin notification
             try:
                 await notification_service.send_notification_to_admin(
                     request_id=new_request.id,
-                    requester_id=requester_id,
+                    requester_id=str(requester_id),
                     requester_username=requester_username,
                     request_message=request_message,
                 )
@@ -181,7 +186,8 @@ async def handle_request_command(  # noqa: C901
         # T035: Handle and log errors
         logger.error("Error processing /request: %s", e, exc_info=True)
         try:
-            await update.message.reply_text(t("err_processing"))
+            if update.message:
+                await update.message.reply_text(t("err_processing"))
         except Exception as reply_error:
             logger.error("Failed to send error reply: %s", reply_error)
 

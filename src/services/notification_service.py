@@ -1,6 +1,7 @@
 """Notification service for sending Telegram messages."""
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application
@@ -13,12 +14,12 @@ from src.services.localizer import t
 class NotificationService:
     """Service for sending Telegram messages to clients and admins."""
 
-    def __init__(self, app: Application):
-        self.app = app
-        self.bot = app.bot
+    def __init__(self, app: Application):  # type: ignore[type-arg]
+        self.app = app  # type: ignore[misc]
+        self.bot = app.bot  # type: ignore[attr-defined]
 
     async def send_message(
-        self, chat_id: str, text: str, reply_markup=None, parse_mode="HTML"
+        self, chat_id: str, text: str, reply_markup: object | None = None, parse_mode: str = "HTML"
     ) -> None:
         """Send message to a Telegram chat.
 
@@ -30,14 +31,16 @@ class NotificationService:
         """
         # T029: Send message via bot
         try:
-            await self.bot.send_message(
+            await self.bot.send_message(  # type: ignore[attr-defined]
                 chat_id=int(chat_id), text=text, reply_markup=reply_markup, parse_mode=parse_mode
             )
         except Exception as e:
             print(f"Error sending message to {chat_id}: {e}")
             raise
 
-    async def send_confirmation_to_requester(self, requester_id: str, message: str = None) -> None:
+    async def send_confirmation_to_requester(
+        self, requester_id: str, message: str | None = None
+    ) -> None:
         """Send confirmation message to requester after request submission.
 
         Args:
@@ -51,8 +54,8 @@ class NotificationService:
         self,
         request_id: int,
         requester_id: str,
-        requester_username: str = None,
-        request_message: str = None,
+        requester_username: str | None = None,
+        request_message: str | None = None,
     ) -> None:
         """Send notification to admin about new request.
 
@@ -165,7 +168,7 @@ class NotificationService:
 
     async def notify_account_owners_and_representatives(
         self,
-        session,
+        session: AsyncSession,
         account_ids: list[int],
         text: str,
         skip_telegram_id: int | None = None,
@@ -181,13 +184,13 @@ class NotificationService:
 
         account_result = await session.execute(
             select(Account)
-            .options(selectinload(Account.user))
+            .options(selectinload(Account.user))  # type: ignore[has-type]
             .where(Account.id.in_(account_ids), Account.account_type == AccountType.OWNER)
         )
-        owner_users = [
-            account.user
+        owner_users: list[User] = [
+            account.user  # type: ignore[misc]
             for account in account_result.scalars()
-            if account.user and account.user.is_active and account.user.telegram_id
+            if account.user and account.user.is_active and account.user.telegram_id  # type: ignore[union-attr]
         ]
 
         owner_ids = {user.id for user in owner_users}
@@ -201,17 +204,17 @@ class NotificationService:
                 User.telegram_id.isnot(None),
             )
         )
-        representatives = reps_result.scalars().all()
+        representatives: list[User] = list(reps_result.scalars().all())  # type: ignore[arg-type]
 
         seen: set[int] = set()
-        recipients = [*owner_users, *representatives]
+        recipients: list[User] = [*owner_users, *representatives]
         for user in recipients:
             if not user.telegram_id or user.telegram_id == skip_telegram_id:
                 continue
             if user.telegram_id in seen:
                 continue
             seen.add(user.telegram_id)
-            await self.send_message(chat_id=user.telegram_id, text=text)
+            await self.send_message(chat_id=str(user.telegram_id), text=text)
 
 
 __all__ = ["NotificationService"]

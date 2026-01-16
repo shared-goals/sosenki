@@ -150,11 +150,13 @@ def client(mock_bot):
 
         mock_app.process_update.side_effect = process_update_impl
 
-        webhook_module._bot_app = mock_app
+        from src.api import bot_context
+
+        bot_context.set_bot_app(mock_app)
 
         yield TestClient(webhook_module.app)
 
-        webhook_module._bot_app = None
+        bot_context.set_bot_app(None)  # type: ignore[arg-type]
 
 
 class TestAdminHandlers:

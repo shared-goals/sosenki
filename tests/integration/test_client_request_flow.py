@@ -106,13 +106,15 @@ class TestAccessRequestFlow:
             mock_app.process_update.side_effect = process_update_impl
 
             # Set global bot app
-            webhook_module._bot_app = mock_app
+            from src.api import bot_context
+
+            bot_context.set_bot_app(mock_app)
 
             # Return test client
             yield TestClient(webhook_module.app)
 
             # Cleanup
-            webhook_module._bot_app = None
+            bot_context.set_bot_app(None)  # type: ignore[arg-type]
 
     @pytest.mark.asyncio
     async def test_full_request_flow(self, client, mock_bot):

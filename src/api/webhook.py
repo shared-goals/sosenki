@@ -2,7 +2,6 @@
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from telegram import Update
 from telegram.ext import Application
 
+from src.api.bot_context import get_bot_app, set_bot_app
 from src.api.mcp_server import mcp_http_app
 from src.api.mini_app import router as mini_app_router
 
@@ -45,9 +45,6 @@ app.include_router(mini_app_router)
 # Mount MCP HTTP app at /mcp path using FastMCP
 app.mount("/mcp", mcp_http_app, name="mcp")
 
-# Global bot application reference (set via setup_webhook_route or directly for testing)
-_bot_app: Optional[Application] = None
-
 
 async def setup_webhook_route(bot_app: Application) -> None:
     """Set up the bot application for webhook processing.
@@ -55,8 +52,7 @@ async def setup_webhook_route(bot_app: Application) -> None:
     Args:
         bot_app: Telegram bot Application instance
     """
-    global _bot_app
-    _bot_app = bot_app
+    set_bot_app(bot_app)
 
 
 # Register health check endpoint
@@ -77,13 +73,13 @@ async def telegram_webhook(update: dict) -> dict:
     Returns:
         {"ok": True} response as per Telegram webhook protocol
     """
-    global _bot_app
-    if not _bot_app:
+    bot_app = get_bot_app()
+    if not bot_app:
         logger.error("Bot application not initialized")
         raise HTTPException(status_code=503, detail="Bot not initialized")
 
     try:
-        telegram_update = Update.de_json(update, _bot_app.bot)
+        telegram_update = Update.de_json(update, bot_app.bot)
         if telegram_update:
             # Log incoming update with key identifiers
             user_id = telegram_update.effective_user.id if telegram_update.effective_user else None
@@ -100,7 +96,7 @@ async def telegram_webhook(update: dict) -> dict:
                 chat_id,
                 update_type,
             )
-            await _bot_app.process_update(telegram_update)
+            await bot_app.process_update(telegram_update)
         return {"ok": True}
     except Exception as e:
         logger.error("Error processing update: %s", e, exc_info=True)

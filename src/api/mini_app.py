@@ -10,18 +10,26 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.bot_context import get_bot_app  # type: ignore[misc]
 from src.models.account import Account, AccountType
+from src.models.auction_bid import AuctionBid
+from src.models.property import Property
 from src.models.transaction import Transaction
 from src.models.user import User
 from src.services import get_async_session
+from src.services.auction_service import AuctionService
+from src.services.audit_service import AuditService
 from src.services.auth_service import (
-    _extract_init_data,
+    _extract_init_data,  # type: ignore[reportPrivateUsage]
     authorize_account_access,
     authorize_account_access_for_roles,
     authorize_user_context_access,
     get_authenticated_user,
     verify_telegram_auth,
 )
+from src.services.locale_service import format_currency
+from src.services.localizer import t
+from src.services.notification_service import NotificationService
 from src.services.transaction_service import TransactionService
 from src.services.user_service import UserService, UserStatusService
 
@@ -31,7 +39,7 @@ logger = logging.getLogger(__name__)
 def _log_debug(
     endpoint: str, start_time: float, telegram_id: int, user: Any, **kwargs: Any
 ) -> None:
-    """Log API request with timing and user context at DEBUG level.
+    """Log API request with timing and user context at INFO level.
 
     Args:
         endpoint: Endpoint name (e.g., 'init', 'bills')
@@ -43,7 +51,7 @@ def _log_debug(
     duration_ms = int((time.time() - start_time) * 1000)
     user_id = getattr(user, "id", "?")
     extra = " ".join(f"{k}={v}" for k, v in kwargs.items())
-    logger.debug(
+    logger.info(
         "mini_app.%s: telegram_id=%d user_id=%s %sduration_ms=%d",
         endpoint,
         telegram_id,
@@ -170,7 +178,7 @@ class PropertyResponse(BaseModel):
     is_ready: bool
     is_for_tenant: bool
     photo_link: str | None
-    sale_price: str | None  # Formatted decimal as string for display
+    sale_price: int | None  # Integer price value
     main_property_id: int | None  # ID of parent property if this is an additional property
 
     model_config = ConfigDict(from_attributes=True)
@@ -183,6 +191,172 @@ class PropertiesResponse(BaseModel):
     total_count: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------------
+# Invest / Auction endpoints
+# ---------------------------------------------------------------------------
+
+
+class AuctionBidResponse(BaseModel):
+    bid_id: int
+    amount: int
+    created_at: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AuctionPropertyResponse(BaseModel):
+    property_id: int
+    property_name: str
+    property_type: str
+    photo_link: str | None = None
+    sale_price: int | None = None
+    max_active_bid: int
+    min_next_bid: int
+    my_active_bids: list[AuctionBidResponse]
+    share_weight: str | None = None
+    main_property_id: int | None = None
+    is_ready: bool
+    is_for_tenant: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AuctionJournalEntryResponse(BaseModel):
+    timestamp: str
+    action: str
+    property_id: int
+    property_name: str
+    amount: int
+    status: str
+    bidder_name: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AuctionOverviewResponse(BaseModel):
+    target_sum: int
+    collectable_sum: int
+    properties: list[AuctionPropertyResponse]
+    journal: list[AuctionJournalEntryResponse]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AuctionPlaceBidRequest(BaseModel):
+    property_id: int
+    amount: int
+
+
+class AuctionCancelBidRequest(BaseModel):
+    bid_id: int
+
+
+class OkResponse(BaseModel):
+    ok: bool = True
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+async def _send_bid_notifications(
+    session: AsyncSession,
+    auction_property: Property,
+    target_user: User,
+    bid_amount: int,
+    previous_bidder: User | None = None,
+    previous_bid_amount: int | None = None,
+) -> None:
+    """Send notifications for new auction bid.
+
+    Args:
+        session: Database session
+        auction_property: Property the bid was placed on
+        target_user: User who placed the bid
+        bid_amount: Amount of the new bid
+        previous_bidder: Previous max bidder (if any)
+        previous_bid_amount: Previous max bid amount (if any)
+    """
+    bot_app = get_bot_app()  # type: ignore[misc]
+    if not bot_app:
+        return
+
+    try:
+        notifier = NotificationService(bot_app)
+
+        # 1. Notify admin about new bid
+        admin_stmt = select(User).where(
+            User.is_administrator.is_(True),
+            User.telegram_id.isnot(None),
+        )
+        admin_user = (await session.execute(admin_stmt)).scalar_one_or_none()
+        if admin_user and admin_user.telegram_id:
+            admin_text = t(
+                "msg_new_auction_bid",
+                property_name=auction_property.property_name,
+                bidder_name=target_user.name,
+                amount=format_currency(bid_amount),
+            )
+            await notifier.send_message(
+                chat_id=str(admin_user.telegram_id),
+                text=admin_text,
+            )
+
+        # 2. Notify previous max bidder if outbid
+        if previous_bidder and previous_bidder.telegram_id:
+            outbid_text = t(
+                "msg_outbid",
+                property_name=auction_property.property_name,
+                new_amount=format_currency(bid_amount),
+                old_amount=format_currency(previous_bid_amount) if previous_bid_amount else "?",
+            )
+            await notifier.send_message(
+                chat_id=str(previous_bidder.telegram_id),
+                text=outbid_text,
+            )
+    except Exception:
+        logger.exception("Error sending auction bid notifications")
+
+
+async def _send_bid_cancel_notification(
+    session: AsyncSession,
+    auction_property: Property,
+    target_user: User,
+    bid_amount: int,
+) -> None:
+    """Send notification for bid cancellation.
+
+    Args:
+        session: Database session
+        auction_property: Property the bid was cancelled on
+        target_user: User who cancelled the bid
+        bid_amount: Amount of the cancelled bid
+    """
+    bot_app = get_bot_app()  # type: ignore[misc]
+    if not bot_app:
+        return
+
+    try:
+        notifier = NotificationService(bot_app)
+
+        admin_stmt = select(User).where(
+            User.is_administrator.is_(True),
+            User.telegram_id.isnot(None),
+        )
+        admin_user = (await session.execute(admin_stmt)).scalar_one_or_none()
+        if admin_user and admin_user.telegram_id:
+            cancel_text = t(
+                "msg_auction_bid_canceled",
+                property_name=auction_property.property_name,
+                bidder_name=target_user.name,
+                amount=format_currency(bid_amount),
+            )
+            await notifier.send_message(
+                chat_id=str(admin_user.telegram_id),
+                text=cancel_text,
+            )
+    except Exception:
+        logger.exception("Error sending bid cancellation notification")
 
 
 async def _build_user_context_data(
@@ -401,7 +575,7 @@ async def get_properties(
         properties = result.scalars().all()
 
         # Format response
-        property_responses = []
+        property_responses: list[PropertyResponse] = []
         for prop in properties:
             property_responses.append(
                 PropertyResponse(
@@ -412,7 +586,7 @@ async def get_properties(
                     is_ready=prop.is_ready,
                     is_for_tenant=prop.is_for_tenant,
                     photo_link=prop.photo_link,
-                    sale_price=str(prop.sale_price) if prop.sale_price else None,
+                    sale_price=prop.sale_price,
                     main_property_id=prop.main_property_id,
                 )
             )
@@ -439,8 +613,292 @@ async def get_properties(
         raise HTTPException(status_code=500, detail="Server error") from e
 
 
+@router.post("/auction", response_model=AuctionOverviewResponse)
+async def get_auction_overview(
+    account_id: int | None = None,
+    session: AsyncSession = Depends(get_async_session),  # noqa: B008
+    authorization: str | None = Header(None, alias="Authorization"),  # noqa: B008
+    body: dict[str, Any] | None = Body(None),  # noqa: B008
+) -> AuctionOverviewResponse:
+    """Get auction overview for investors.
+
+    Returns:
+    - target_sum: sum of sale_price for all properties in auction (integer price value)
+    - collectable_sum: sum of max active bids per property
+    - properties: list of auction properties with max bid + my active bids
+    - journal: bid/cancel events sorted by timestamp desc (admin includes bidder_name)
+
+    Representation: Admin/staff can view auction for any account by passing account_id.
+    User with representative_id can view auction for represented user's account.
+    """
+    start_time = time.time()
+    try:
+        telegram_id = await verify_telegram_auth(session, authorization, body=body)
+        authenticated_user = await get_authenticated_user(session, telegram_id)
+
+        # Resolve target user via account_id (for representation)
+        if account_id:
+            account = await authorize_account_access(session, authenticated_user, account_id)
+            if not account.user_id:
+                raise HTTPException(status_code=400, detail="ACCOUNT_HAS_NO_USER")
+            target_user = await session.get(User, account.user_id)
+            if not target_user:
+                raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
+            is_representing = authenticated_user.id != target_user.id
+        else:
+            target_user = authenticated_user
+            is_representing = False
+
+        auction_service = AuctionService(session)
+        totals, props, journal = await auction_service.list_auction(target_user)
+
+        response = AuctionOverviewResponse(
+            target_sum=totals.target_sum,
+            collectable_sum=totals.collectable_sum,
+            properties=[
+                AuctionPropertyResponse(
+                    property_id=p.property_id,
+                    property_name=p.property_name,
+                    property_type=p.property_type,
+                    share_weight=p.share_weight,
+                    photo_link=p.photo_link,
+                    sale_price=p.sale_price,
+                    main_property_id=p.main_property_id,
+                    is_ready=p.is_ready,
+                    is_for_tenant=p.is_for_tenant,
+                    max_active_bid=p.max_active_bid,
+                    min_next_bid=p.min_next_bid,
+                    my_active_bids=[
+                        AuctionBidResponse(
+                            bid_id=b.bid_id,
+                            amount=b.amount,
+                            created_at=b.created_at.isoformat(),
+                        )
+                        for b in p.my_active_bids
+                    ],
+                )
+                for p in props
+            ],
+            journal=[
+                AuctionJournalEntryResponse(
+                    timestamp=e.timestamp.isoformat(),
+                    action=e.action,
+                    property_id=e.property_id,
+                    property_name=e.property_name,
+                    amount=e.amount,
+                    status=e.status,
+                    bidder_name=e.bidder_name,
+                )
+                for e in journal
+            ],
+        )
+
+        _log_debug(
+            "auction",
+            start_time,
+            telegram_id,
+            authenticated_user,
+            account_id=account_id,
+            is_representing=is_representing,
+            property_count=len(response.properties),
+            journal_count=len(response.journal),
+        )
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in /api/mini-app/auction: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Server error") from e
+
+
+@router.post("/auction/bid", response_model=OkResponse)
+async def place_auction_bid(
+    payload: AuctionPlaceBidRequest,
+    account_id: int | None = None,
+    session: AsyncSession = Depends(get_async_session),  # noqa: B008
+    authorization: str | None = Header(None, alias="Authorization"),  # noqa: B008
+) -> OkResponse:
+    """Place a new auction bid (investors only).
+
+    Representation: Admin/staff can place bid for any account by passing account_id.
+    """
+    start_time = time.time()
+    try:
+        telegram_id = await verify_telegram_auth(session, authorization, body=None)
+        authenticated_user = await get_authenticated_user(session, telegram_id)
+
+        # Resolve target user via account_id (for representation)
+        if account_id:
+            account = await authorize_account_access(session, authenticated_user, account_id)
+            if not account.user_id:
+                raise HTTPException(status_code=400, detail="ACCOUNT_HAS_NO_USER")
+            target_user = await session.get(User, account.user_id)
+            if not target_user:
+                raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
+            is_representing = authenticated_user.id != target_user.id
+        else:
+            target_user = authenticated_user
+            is_representing = False
+
+        # Query previous max bidder before placing new bid (for outbid notification)
+        previous_max_bid_stmt = (
+            select(AuctionBid)
+            .where(
+                AuctionBid.property_id == payload.property_id,
+                AuctionBid.status == "active",
+            )
+            .order_by(AuctionBid.amount.desc())
+            .limit(1)
+        )
+        previous_max_bid = (await session.execute(previous_max_bid_stmt)).scalar_one_or_none()
+        previous_bidder: User | None = None
+        if previous_max_bid:
+            previous_bidder = await session.get(User, previous_max_bid.investor_id)
+
+        # Get property for notifications
+        auction_property = await session.get(Property, payload.property_id)
+
+        auction_service = AuctionService(session)
+        await auction_service.place_bid(
+            target_user,
+            property_id=payload.property_id,
+            amount=payload.amount,
+        )
+
+        # Audit log for bid placement (if representing)
+        if is_representing:
+            await AuditService.log(
+                session,
+                entity_type="auction_bid",
+                entity_id=payload.property_id,
+                action="place_bid_on_behalf",
+                actor_id=authenticated_user.id,
+                changes={
+                    "investor_id": target_user.id,
+                    "property_id": payload.property_id,
+                    "amount": payload.amount,
+                },
+            )
+
+        await session.commit()
+
+        # Send notifications
+        if auction_property:
+            await _send_bid_notifications(
+                session,
+                auction_property,
+                target_user,
+                payload.amount,
+                previous_bidder,
+                previous_max_bid.amount if previous_max_bid else None,
+            )
+
+        _log_debug(
+            "auction_bid",
+            start_time,
+            telegram_id,
+            authenticated_user,
+            account_id=account_id,
+            is_representing=is_representing,
+            property_id=payload.property_id,
+            amount=payload.amount,
+        )
+        return OkResponse(ok=True)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Error in /api/mini-app/auction/bid: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Server error") from e
+
+
+@router.post("/auction/bid/cancel", response_model=OkResponse)
+async def cancel_auction_bid(
+    payload: AuctionCancelBidRequest,
+    account_id: int | None = None,
+    session: AsyncSession = Depends(get_async_session),  # noqa: B008
+    authorization: str | None = Header(None, alias="Authorization"),  # noqa: B008
+) -> OkResponse:
+    """Cancel an existing active bid (investor can cancel own bids).
+
+    Representation: Admin/staff can cancel bid for any account by passing account_id.
+    """
+    start_time = time.time()
+    try:
+        telegram_id = await verify_telegram_auth(session, authorization, body=None)
+        authenticated_user = await get_authenticated_user(session, telegram_id)
+
+        # Resolve target user via account_id (for representation)
+        if account_id:
+            account = await authorize_account_access(session, authenticated_user, account_id)
+            if not account.user_id:
+                raise HTTPException(status_code=400, detail="ACCOUNT_HAS_NO_USER")
+            target_user = await session.get(User, account.user_id)
+            if not target_user:
+                raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
+            is_representing = authenticated_user.id != target_user.id
+        else:
+            target_user = authenticated_user
+            is_representing = False
+
+        # Get bid details before canceling (for notification)
+        bid = await session.get(AuctionBid, payload.bid_id)
+        if bid:
+            auction_property = await session.get(Property, bid.property_id)
+        else:
+            auction_property = None
+
+        auction_service = AuctionService(session)
+        await auction_service.cancel_bid(target_user, bid_id=payload.bid_id)
+
+        # Audit log for bid cancellation (if representing)
+        if is_representing:
+            await AuditService.log(
+                session,
+                entity_type="auction_bid",
+                entity_id=payload.bid_id,
+                action="cancel_bid_on_behalf",
+                actor_id=authenticated_user.id,
+                changes={
+                    "investor_id": target_user.id,
+                    "bid_id": payload.bid_id,
+                },
+            )
+
+        await session.commit()
+
+        # Send notification to admin
+        if auction_property and bid:
+            await _send_bid_cancel_notification(
+                session,
+                auction_property,
+                target_user,
+                bid.amount,
+            )
+
+        _log_debug(
+            "auction_cancel",
+            start_time,
+            telegram_id,
+            authenticated_user,
+            account_id=account_id,
+            is_representing=is_representing,
+            bid_id=payload.bid_id,
+        )
+        return OkResponse(ok=True)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Error in /api/mini-app/auction/bid/cancel: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Server error") from e
+
+
 # Helper functions for bills endpoint
-def _build_electricity_reading_subqueries() -> tuple:
+def _build_electricity_reading_subqueries() -> tuple[Any, Any]:
     """Build start and end reading subqueries for electricity bills.
 
     Returns:
@@ -477,7 +935,13 @@ def _build_electricity_reading_subqueries() -> tuple:
     return start_reading_alias, end_reading_alias
 
 
-def _format_bill_response(bill, service_period, property_obj, start_reading, end_reading) -> dict:
+def _format_bill_response(
+    bill: Any,
+    service_period: Any,
+    property_obj: Any,
+    start_reading: Any,
+    end_reading: Any,
+) -> dict[str, Any]:
     """Format bill data into response dict.
 
     Args:
@@ -770,7 +1234,7 @@ async def get_bills(
         bills_data = result.all()
 
         # Build response list
-        bills_response = []
+        bills_response: list[ElectricityBillResponse] = []
         for row_data in bills_data:
             bill = row_data[0]
             service_period = row_data[1]
@@ -985,11 +1449,11 @@ async def get_accounts(
 
         from src.services.balance_service import BalanceCalculationService
 
-        stmt = select(Account).options(selectinload(Account.user))
+        stmt = select(Account).options(selectinload(Account.user))  # type: ignore[arg-type]
         result = await session.execute(stmt)
         accounts = result.scalars().all()
 
-        accounts_list = []
+        accounts_list: list[AccountItem] = []
         balance_service = BalanceCalculationService(session)
 
         for account in accounts:
@@ -1004,7 +1468,7 @@ async def get_accounts(
             )
 
             # Get representative_id from the user relationship (if account has a user)
-            representative_id = account.user.representative_id if account.user else None
+            representative_id = account.user.representative_id if account.user else None  # type: ignore[attr-defined]
 
             accounts_list.append(
                 AccountItem(
@@ -1013,7 +1477,7 @@ async def get_accounts(
                     account_type=account_type_str,
                     balance=result.balance,
                     invert_for_display=result.invert_for_display,
-                    representative_id=representative_id,
+                    representative_id=representative_id,  # type: ignore[arg-type]
                 )
             )
 

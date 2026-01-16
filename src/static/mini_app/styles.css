@@ -134,6 +134,118 @@ body {
     color: var(--color-text-secondary);
 }
 
+.is-loading {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.empty-state {
+    padding: var(--spacing-sm);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-base);
+}
+
+/* Basic button styles (used by dynamic UI like Auction) */
+.btn {
+    appearance: none;
+    border: 1px solid var(--color-border);
+    background: var(--color-white);
+    color: var(--color-text);
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+    font-size: var(--font-size-base);
+    line-height: 1.2;
+}
+
+.btn:active {
+    background: var(--color-active);
+}
+
+.btn-primary {
+    background: var(--color-water);
+    border-color: var(--color-water);
+    color: var(--color-text-on-dark);
+}
+
+.btn-secondary {
+    background: var(--color-light-gray);
+    border-color: var(--color-border);
+    color: var(--color-text);
+}
+
+.auction-actions {
+    margin-top: var(--spacing-xs);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+}
+
+.auction-bid-input {
+    width: 100%;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+    font-size: var(--font-size-base);
+}
+
+.auction-my-bids {
+    padding-top: var(--spacing-xs);
+    border-top: 1px dashed var(--color-border);
+}
+
+.auction-my-bids-title {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    margin-bottom: 4px;
+}
+
+.auction-my-bid-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-xs);
+}
+
+.auction-bid-text-container {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.auction-bid-amount {
+    color: var(--color-text);
+    font-weight: 600;
+    font-size: var(--font-size-sm);
+}
+
+.auction-bid-date {
+    color: var(--color-text-secondary);
+    font-size: 0.75rem;
+    line-height: 1.2;
+}
+
+.auction-journal-entry {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-xs) 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.auction-journal-left {
+    flex: 1 1 auto;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.auction-journal-right {
+    flex: 0 0 auto;
+    color: var(--color-text);
+    font-weight: 600;
+    font-size: var(--font-size-sm);
+}
+
 /* ==========================================================================
    REUSABLE BASE CLASSES
    ========================================================================== */
@@ -1204,6 +1316,18 @@ body {
     text-align: center;
     background: var(--color-info-bg);
     color: var(--color-info);
+}
+
+/* Auction Totals Section */
+#auction-totals {
+    font-size: 14px;
+    line-height: 1.6;
+    text-align: left;
+}
+
+#auction-target-total,
+#auction-collectable-total {
+    font-weight: bold;
 }
 
 /* ==========================================================================

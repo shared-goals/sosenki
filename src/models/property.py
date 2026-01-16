@@ -85,11 +85,10 @@ class Property(Base, BaseModel):
         comment="URL to property's photo gallery",
     )
 
-    # Selling price
-    sale_price: Mapped[Decimal | None] = mapped_column(
-        Numeric(10, 2),
+    # Selling price (integer value)
+    sale_price: Mapped[int | None] = mapped_column(
         nullable=True,
-        comment="Selling price of the property",
+        comment="Selling price of the property (integer price value)",
     )
 
     # Self-referential FK for hierarchical property relationships

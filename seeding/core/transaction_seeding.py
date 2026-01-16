@@ -6,7 +6,7 @@ replacing dual Debit + Credit logic.
 
 import logging
 from decimal import Decimal
-from typing import Dict, List
+from typing import Any, cast
 
 from sqlalchemy.orm import Session
 
@@ -55,7 +55,9 @@ def _update_period_fields(
     if electricity_losses is not None:
         period.electricity_losses = elec_losses
     if status is not None:
-        period.status = status
+        from src.models.service_period import PeriodStatus
+
+        period.status = PeriodStatus(status)
     if period_months is not None:
         period.period_months = period_months
     if year_budget_val is not None:
@@ -168,7 +170,7 @@ def get_or_create_service_period(
 
 
 def get_or_create_budget_item(
-    session: Session, budget_item_name: str, service_period: ServicePeriod = None
+    session: Session, budget_item_name: str, service_period: ServicePeriod | None = None
 ) -> BudgetItem | None:
     """Get existing budget item or create new one.
 
@@ -260,8 +262,8 @@ def get_or_create_account(session: Session, name: str) -> Account | None:
 
 def create_debit_transactions(
     session: Session,
-    debit_dicts: List[Dict],
-    user_map: Dict[str, User],
+    debit_dicts: list[dict[str, Any]],
+    user_map: dict[str, User],
     period: ServicePeriod,
     default_account_name: str = "Взносы",
 ) -> int:
@@ -293,7 +295,7 @@ def create_debit_transactions(
                 logger.warning(f"Owner not found: {owner_name}, skipping debit")
                 continue
 
-            if not user.account:
+            if not user.account:  # type: ignore[has-type]
                 logger.warning(f"No personal account for user: {owner_name}, skipping debit")
                 continue
 
@@ -306,12 +308,12 @@ def create_debit_transactions(
                 continue
 
             # Create transaction: user account → organization account
+            user_account = cast(Account, user.account)  # type: ignore[arg-type]
             transaction = Transaction(
-                from_account_id=user.account.id,
+                from_account_id=user_account.id,
                 to_account_id=community_account.id,
                 amount=debit_dict["amount"],
                 transaction_date=debit_dict["debit_date"],
-                service_period_id=period.id,
                 description=debit_dict.get("comment"),
             )
             session.add(transaction)
@@ -331,8 +333,8 @@ def create_debit_transactions(
 
 def create_credit_transactions(
     session: Session,
-    credit_dicts: List[Dict],
-    user_map: Dict[str, User],
+    credit_dicts: list[dict[str, Any]],
+    user_map: dict[str, User],
     period: ServicePeriod,
     default_account_name: str = "Взносы",
 ) -> int:
@@ -395,7 +397,6 @@ def create_credit_transactions(
                         to_account_id=to_organization_account.id,
                         amount=credit_dict["amount"],
                         transaction_date=credit_dict["debit_date"],
-                        service_period_id=period.id,
                         budget_item_id=budget_item.id if budget_item else None,
                         description=(
                             f"{credit_dict['expense_type']}: {credit_dict.get('description', '')}"
@@ -416,7 +417,7 @@ def create_credit_transactions(
                 logger.warning(f"Payer not found: {payer_name}, skipping credit")
                 continue
 
-            if not user.account:
+            if not user.account:  # type: ignore[has-type]
                 logger.warning(f"No personal account for user: {payer_name}, skipping credit")
                 continue
 
@@ -434,12 +435,12 @@ def create_credit_transactions(
 
             # Create transaction: user account → organization account
             # (user contributes via this credit)
+            user_account = cast(Account, user.account)  # type: ignore[arg-type]
             transaction = Transaction(
-                from_account_id=user.account.id,
+                from_account_id=user_account.id,
                 to_account_id=organization_account.id,
                 amount=credit_dict["amount"],
                 transaction_date=credit_dict["debit_date"],
-                service_period_id=period.id,
                 budget_item_id=budget_item.id if budget_item else None,
                 description=(
                     f"{credit_dict['expense_type']}: {credit_dict.get('description', '')}"

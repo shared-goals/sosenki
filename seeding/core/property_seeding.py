@@ -5,7 +5,7 @@ and type mapping for auxiliary properties. All configuration loaded from seeding
 """
 
 import logging
-from typing import Dict, List
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -20,7 +20,7 @@ from src.utils.parsers import (
 )
 
 
-def parse_property_row(row_dict: Dict[str, str], owner: User) -> List[Dict]:
+def parse_property_row(row_dict: dict[str, str], owner: User) -> list[dict[str, Any]]:
     """
     Parse a row from named range into one or more Property records.
 
@@ -44,7 +44,7 @@ def parse_property_row(row_dict: Dict[str, str], owner: User) -> List[Dict]:
         DataValidationError: On validation errors
     """
     logger = logging.getLogger("sosenki.seeding.properties")
-    properties = []
+    properties: list[dict[str, Any]] = []
 
     # Load configuration
     config = SeedingConfig.load()
@@ -52,7 +52,7 @@ def parse_property_row(row_dict: Dict[str, str], owner: User) -> List[Dict]:
     try:
         # PHASE 1: Extract fields from main property row
         main_field_mappings = config.get_property_field_mappings("main")
-        property_name_column = main_field_mappings.get("property_name_column")
+        property_name_column = main_field_mappings.get("property_name_column") or ""
         property_name = row_dict.get(property_name_column, "").strip()
         if not property_name:
             logger.warning("Skipping row: empty property_name (%s column)", property_name_column)
@@ -60,27 +60,29 @@ def parse_property_row(row_dict: Dict[str, str], owner: User) -> List[Dict]:
 
         # Parse numeric fields
         try:
-            share_weight_column = main_field_mappings.get("share_weight_column")
+            share_weight_column = main_field_mappings.get("share_weight_column") or ""
             share_weight = parse_russian_percentage(row_dict.get(share_weight_column, ""))
         except ValueError as e:
             logger.warning(f"Invalid share_weight format: {e}, skipping row")
             return []
 
         try:
-            sale_price_column = main_field_mappings.get("sale_price_column")
-            sale_price = parse_russian_currency(row_dict.get(sale_price_column, ""))
+            sale_price_column = main_field_mappings.get("sale_price_column") or ""
+            sale_price_decimal = parse_russian_currency(row_dict.get(sale_price_column, ""))
+            # Convert Decimal to int for integer price storage
+            sale_price = int(sale_price_decimal) if sale_price_decimal is not None else None
         except ValueError as e:
             logger.warning(f"Invalid sale_price format: {e}, skipping row")
             return []
 
         # Extract other field values
-        type_column = main_field_mappings.get("type_column")
-        ready_column = main_field_mappings.get("is_ready_column")
-        tenant_column = main_field_mappings.get("is_for_tenant_column")
-        photo_column = main_field_mappings.get("photo_link_column")
+        type_column = main_field_mappings.get("type_column") or ""
+        ready_column = main_field_mappings.get("is_ready_column") or ""
+        tenant_column = main_field_mappings.get("is_for_tenant_column") or ""
+        photo_column = main_field_mappings.get("photo_link_column") or ""
 
         # PHASE 2: Apply default attributes
-        main_property = {
+        main_property: dict[str, Any] = {
             "owner_id": owner.id,
             "property_name": property_name,
             "type": row_dict.get(type_column, "").strip(),
@@ -124,7 +126,7 @@ def parse_property_row(row_dict: Dict[str, str], owner: User) -> List[Dict]:
                 is_conservation = is_conservation_mapping.get(code, True)
 
                 # Additional property attributes (selective inheritance)
-                additional_property = {
+                additional_property: dict[str, Any] = {
                     "owner_id": owner.id,
                     "property_name": code,
                     "type": property_type,
@@ -148,7 +150,9 @@ def parse_property_row(row_dict: Dict[str, str], owner: User) -> List[Dict]:
         raise DataValidationError(f"Failed to parse property row: {e}") from e
 
 
-def create_properties(session: Session, property_dicts: List[Dict], owner: User) -> List[Property]:
+def create_properties(
+    session: Session, property_dicts: list[dict[str, Any]], owner: User
+) -> list[Property]:
     """
     Create Property records in database.
 
@@ -168,10 +172,10 @@ def create_properties(session: Session, property_dicts: List[Dict], owner: User)
         DataValidationError: On database errors
     """
     logger = logging.getLogger("sosenki.seeding.properties")
-    created = []
+    created: list[Property] = []
 
     try:
-        main_property = None
+        main_property: Property | None = None
 
         for idx, prop_dict in enumerate(property_dicts):
             # First property is the main property
@@ -184,7 +188,8 @@ def create_properties(session: Session, property_dicts: List[Dict], owner: User)
                 logger.debug(f"Created main property: {prop.property_name} (id={prop.id})")
             else:
                 # Additional properties reference the main property
-                prop_dict["main_property_id"] = main_property.id
+                if main_property is not None:
+                    prop_dict["main_property_id"] = main_property.id
                 prop = Property(**prop_dict)
                 session.add(prop)
                 session.flush()

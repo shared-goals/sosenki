@@ -81,6 +81,35 @@
             </section>
         </div>
     </template>
+
+    <!-- Auction Page Template (investors only) -->
+    <template id="auction-template">
+        <div class="page-container">
+            <header class="header">
+                <h1 data-i18n="title_auction">Auction</h1>
+            </header>
+
+            <main class="account-details-main">
+                <section class="balance-section">
+                    <h2 data-i18n="title_auction_totals">Totals</h2>
+                    <div id="auction-totals">
+                        <div><span data-i18n="label_auction_target_sum">Target sum</span> <span id="auction-target-total"></span></div>
+                        <div><span data-i18n="label_auction_collectable_sum">Collectable sum</span> <span id="auction-collectable-total"></span></div>
+                    </div>
+                </section>
+
+                <section class="properties-section visible" style="margin-top: 16px;">
+                    <h2 data-i18n="title_auction_properties">Properties</h2>
+                    <div id="auction-properties-list"></div>
+                </section>
+
+                <section class="transactions-section" style="margin-top: 16px;">
+                    <h2 data-i18n="title_auction_journal">Journal</h2>
+                    <div id="auction-journal-list"></div>
+                </section>
+            </main>
+        </div>
+    </template>
     
     <!-- Transactions Page Template -->
     <template id="transactions-template">

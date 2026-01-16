@@ -123,6 +123,7 @@ def check_translations():  # noqa: C901
     python_files.extend(
         [
             project_root / "src" / "services" / "notification_service.py",
+            project_root / "src" / "api" / "mini_app.py",
         ]
     )
 

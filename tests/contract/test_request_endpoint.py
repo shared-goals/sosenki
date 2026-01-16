@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api import webhook as webhook_module
 from src.api.webhook import app
 
 
@@ -28,8 +27,10 @@ def mock_bot():
 @pytest.fixture
 def client(mock_bot):
     """FastAPI test client with bot app registered."""
-    # Set the global bot app in webhook module
-    webhook_module._bot_app = mock_bot
+    from src.api import bot_context
+
+    # Set the global bot app using bot_context
+    bot_context.set_bot_app(mock_bot)
 
     # Return the test client
     test_client = TestClient(app)
@@ -37,7 +38,7 @@ def client(mock_bot):
     yield test_client
 
     # Clean up
-    webhook_module._bot_app = None
+    bot_context.set_bot_app(None)  # type: ignore[arg-type]
 
 
 def create_telegram_update(
@@ -98,9 +99,6 @@ class TestRequestEndpoint:
         T025: POST /webhook/telegram with /request update → returns 200,
         bot queues confirmation and admin notification
         """
-        # Ensure mock bot is set
-        webhook_module._bot_app = mock_bot
-
         # Mock Telegram Update.de_json to return a mock Update object
         mock_update = MagicMock()
         with patch("telegram.Update.de_json", return_value=mock_update):
@@ -132,9 +130,6 @@ class TestRequestEndpoint:
         T026: POST with /request from client with existing PENDING request
         → returns 200, client receives error message "You already have a pending request"
         """
-        # Ensure mock bot is set
-        webhook_module._bot_app = mock_bot
-
         # Mock Telegram Update.de_json to return a mock Update object
         mock_update_1 = MagicMock()
         mock_update_2 = MagicMock()
@@ -185,9 +180,6 @@ class TestRequestEndpoint:
 
         Group chats cannot use WebAppInfo buttons, so requests must be sent in private messages.
         """
-        # Ensure mock bot is set
-        webhook_module._bot_app = mock_bot
-
         # Mock Telegram Update.de_json to return a mock Update object
         mock_update = MagicMock()
 

@@ -56,9 +56,9 @@ class TestWebhookTelegramEndpoint:
     @pytest.mark.asyncio
     async def test_telegram_webhook_valid_update(self, client, mock_bot_app):
         """Test webhook processes valid Telegram update."""
-        from src.api import webhook
+        from src.api import bot_context
 
-        webhook._bot_app = mock_bot_app
+        bot_context.set_bot_app(mock_bot_app)
 
         update_data = {
             "update_id": 1,
@@ -80,9 +80,9 @@ class TestWebhookTelegramEndpoint:
     @pytest.mark.asyncio
     async def test_telegram_webhook_empty_update(self, client, mock_bot_app):
         """Test webhook handles empty/null update gracefully."""
-        from src.api import webhook
+        from src.api import bot_context
 
-        webhook._bot_app = mock_bot_app
+        bot_context.set_bot_app(mock_bot_app)
 
         response = client.post("/webhook/telegram", json={"update_id": 2})
 
@@ -92,9 +92,9 @@ class TestWebhookTelegramEndpoint:
     @pytest.mark.asyncio
     async def test_telegram_webhook_error_processing(self, client, mock_bot_app):
         """Test webhook returns 500 on processing error."""
-        from src.api import webhook
+        from src.api import bot_context
 
-        webhook._bot_app = mock_bot_app
+        bot_context.set_bot_app(mock_bot_app)
         mock_bot_app.process_update.side_effect = Exception("Processing error")
 
         update_data = {
@@ -116,9 +116,9 @@ class TestWebhookTelegramEndpoint:
     @pytest.mark.asyncio
     async def test_telegram_webhook_callback_query_update(self, client, mock_bot_app):
         """Test webhook processes callback query update."""
-        from src.api import webhook
+        from src.api import bot_context
 
-        webhook._bot_app = mock_bot_app
+        bot_context.set_bot_app(mock_bot_app)
 
         update_data = {
             "update_id": 3,
@@ -142,19 +142,19 @@ class TestSetupWebhookRoute:
     @pytest.mark.asyncio
     async def test_setup_webhook_route_sets_bot_app(self, mock_bot_app):
         """Test setup_webhook_route sets the global bot app."""
-        import src.api.webhook as webhook_module
+        from src.api import bot_context
 
         # Clear any existing bot app
-        webhook_module._bot_app = None
+        bot_context.set_bot_app(None)  # type: ignore[arg-type]
 
         # Call setup_webhook_route
         await setup_webhook_route(mock_bot_app)
 
         # Verify bot app was set
-        assert webhook_module._bot_app is mock_bot_app
+        assert bot_context.get_bot_app() is mock_bot_app
 
         # Clean up
-        webhook_module._bot_app = None
+        bot_context.set_bot_app(None)  # type: ignore[arg-type]
 
     @pytest.mark.asyncio
     async def test_setup_webhook_route_endpoint_processes_update(self, mock_bot_app):

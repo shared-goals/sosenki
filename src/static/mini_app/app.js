@@ -545,6 +545,26 @@ function formatCurrency(amount, options = {}) {
 }
 
 /**
+ * Format a value as a percentage with Russian locale formatting
+ * @param {number|string} value - The percentage value to format (e.g., 3.56 for 3.56%)
+ * @param {Object} options - Formatting options
+ * @param {number} options.decimals - Number of decimal places (default: 2)
+ * @param {boolean} options.includeSymbol - Whether to include % symbol (default: true)
+ * @returns {string} Formatted percentage (e.g., "3,56%" for 3.56)
+ */
+function formatPercent(value, options = {}) {
+    const {
+        decimals = 2,
+        includeSymbol = true
+    } = options;
+
+    const numValue = typeof value === 'string' ? parseFloat(value) : value;
+    const percent = numValue.toFixed(decimals).replace('.', ',');
+    
+    return includeSymbol ? `${percent}%` : percent;
+}
+
+/**
  * Load and render transactions from backend
  * @param {string} containerId - ID of container to render transactions into
  * @param {string} scope - Scope for filtering ('personal' or 'all'). Defaults to 'personal'
@@ -1048,6 +1068,10 @@ function renderAdminUserSelector(isAdministrator, currentUserId, users = null) {
  * Handle menu item click
  */
 async function handleMenuAction(action) {
+    if (action === 'invest') {
+        navigateTo('auction');
+        return;
+    }
     if (action === 'enjoy') {
         try {
             // Get photo gallery URL from cached app context (available from /init)
@@ -1158,6 +1182,8 @@ function renderPage(page, params = {}) {
         loadAccounts('accounts-list');
     } else if (page === 'account-details' && params.accountId) {
         loadAccountDetails(params.accountId);
+    } else if (page === 'auction') {
+        loadAuction();
     }
 }
 
@@ -1243,6 +1269,375 @@ async function loadAccountDetails(accountId) {
     } catch (error) {
         console.error('Error loading account details:', error);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Invest / Auction
+// ---------------------------------------------------------------------------
+
+async function loadAuction() {
+    const totalsContainer = document.getElementById('auction-totals');
+    const propertiesContainer = document.getElementById('auction-properties-list');
+    const journalContainer = document.getElementById('auction-journal-list');
+
+    if (propertiesContainer) propertiesContainer.innerHTML = '';
+    if (journalContainer) journalContainer.innerHTML = '';
+    if (totalsContainer) totalsContainer.classList.add('is-loading');
+
+    try {
+        const initData = getInitData();
+        if (!initData) return;
+
+        // Build URL with account_id parameter if representing
+        let url = '/api/mini-app/auction';
+        if (__currentAccountId !== null) {
+            url += `?account_id=${__currentAccountId}`;
+        }
+
+        const resp = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': 'tma ' + initData,
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!resp.ok) {
+            if (resp.status === 403) {
+                tg.showAlert(t('err_not_investor'));
+                goBack();
+                return;
+            }
+            tg.showAlert(t('err_network'));
+            return;
+        }
+
+        const data = await resp.json();
+        renderAuctionOverview(data);
+    } catch (error) {
+        console.error('Error loading auction:', error);
+        tg.showAlert(t('err_network'));
+    } finally {
+        if (totalsContainer) totalsContainer.classList.remove('is-loading');
+    }
+}
+
+function renderAuctionOverview(data) {
+    const targetEl = document.getElementById('auction-target-total');
+    const collectableEl = document.getElementById('auction-collectable-total');
+
+    if (targetEl) {
+        const val = data?.target_sum ?? 0;
+        targetEl.textContent = formatCurrency(Number(val) || 0);
+    }
+    if (collectableEl) {
+        const val = data?.collectable_sum ?? 0;
+        collectableEl.textContent = formatCurrency(Number(val) || 0);
+    }
+
+    renderAuctionProperties(Array.isArray(data?.properties) ? data.properties : []);
+    renderAuctionJournal(Array.isArray(data?.journal) ? data.journal : []);
+}
+
+function renderAuctionProperties(properties) {
+    const listContainer = document.getElementById('auction-properties-list');
+    if (!listContainer) return;
+
+    listContainer.innerHTML = '';
+
+    if (!properties || properties.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'empty-state';
+        empty.textContent = t('msg_no_auction_properties');
+        listContainer.appendChild(empty);
+        return;
+    }
+
+    const mainProperties = properties
+        .filter(p => !p.main_property_id)
+        .sort((a, b) => (a.property_id || 0) - (b.property_id || 0));
+    const additionalProperties = properties.filter(p => p.main_property_id);
+
+    const additionalMap = {};
+    additionalProperties.forEach(prop => {
+        if (!additionalMap[prop.main_property_id]) {
+            additionalMap[prop.main_property_id] = [];
+        }
+        additionalMap[prop.main_property_id].push(prop);
+    });
+    Object.keys(additionalMap).forEach(mainId => {
+        additionalMap[mainId].sort((a, b) => (a.property_id || 0) - (b.property_id || 0));
+    });
+
+    mainProperties.forEach(mainProp => {
+        listContainer.appendChild(createAuctionPropertyElement(mainProp, false));
+        const children = additionalMap[mainProp.property_id] || [];
+        children.forEach(child => listContainer.appendChild(createAuctionPropertyElement(child, true)));
+    });
+}
+
+function createAuctionPropertyElement(property, isAdditional = false) {
+    const item = document.createElement('div');
+    item.className = `property-item ${isAdditional ? 'is-additional-property' : 'is-main-property'}`;
+
+    const info = document.createElement('div');
+    info.className = 'property-info';
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'property-name';
+    nameEl.textContent = isAdditional ? ('└─ ' + property.property_name) : property.property_name;
+    info.appendChild(nameEl);
+
+    if (property.property_type) {
+        const typeEl = document.createElement('div');
+        typeEl.className = 'property-type';
+        typeEl.textContent = property.property_type;
+        info.appendChild(typeEl);
+    }
+
+    const metaEl = document.createElement('div');
+    metaEl.className = 'property-meta';
+
+    if (property.is_ready === false) {
+        const readyBadge = document.createElement('span');
+        readyBadge.className = 'property-badge not-ready';
+        readyBadge.textContent = t('status_not_ready');
+        metaEl.appendChild(readyBadge);
+    }
+
+    if (property.is_for_tenant) {
+        const tenantBadge = document.createElement('span');
+        tenantBadge.className = 'property-badge tenant';
+        tenantBadge.textContent = t('label_tenant');
+        metaEl.appendChild(tenantBadge);
+    }
+
+    if (property.share_weight) {
+        const weightBadge = document.createElement('span');
+        weightBadge.className = 'property-badge';
+        weightBadge.textContent = `${t('label_weight')}: ${formatPercent(property.share_weight)}`;
+        metaEl.appendChild(weightBadge);
+    }
+
+    if (property.sale_price) {
+        const priceBadge = document.createElement('span');
+        priceBadge.className = 'property-badge';
+        priceBadge.textContent = `${t('label_target_price')}: ${formatCurrency(Number(property.sale_price || 0))}`;
+        metaEl.appendChild(priceBadge);
+    }
+
+    const maxBidBadge = document.createElement('span');
+    maxBidBadge.className = 'property-badge';
+    maxBidBadge.textContent = `${t('label_max_bid')}: ${formatCurrency(Number(property.max_active_bid || 0))}`;
+    metaEl.appendChild(maxBidBadge);
+
+    const minNextBadge = document.createElement('span');
+    minNextBadge.className = 'property-badge';
+    minNextBadge.textContent = `${t('label_min_next_bid')}: ${formatCurrency(Number(property.min_next_bid || 0))}`;
+    metaEl.appendChild(minNextBadge);
+
+    info.appendChild(metaEl);
+
+    if (property.photo_link) {
+        const photoLinkEl = document.createElement('div');
+        photoLinkEl.className = 'property-photo-link';
+        const linkEl = document.createElement('a');
+        linkEl.href = property.photo_link;
+        linkEl.target = '_blank';
+        linkEl.rel = 'noopener noreferrer';
+        linkEl.textContent = t('label_view_photos');
+        photoLinkEl.appendChild(linkEl);
+        info.appendChild(photoLinkEl);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'auction-actions';
+
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.inputMode = 'numeric';
+    input.min = '1';
+    input.step = '1';
+    input.placeholder = String(property.min_next_bid || 1);
+    input.className = 'auction-bid-input';
+
+    const bidBtn = document.createElement('button');
+    bidBtn.className = 'btn btn-primary auction-bid-button';
+    bidBtn.textContent = t('btn_place_bid');
+    bidBtn.addEventListener('click', async () => {
+        const amount = parseInt(input.value, 10);
+        if (!Number.isFinite(amount) || amount <= 0) {
+            tg.showAlert(t('err_invalid_bid_amount'));
+            return;
+        }
+        await placeAuctionBid(property.property_id, amount);
+    });
+
+    actions.appendChild(input);
+    actions.appendChild(bidBtn);
+
+    // My active bids list
+    const myBids = Array.isArray(property.my_active_bids) ? property.my_active_bids : [];
+    if (myBids.length > 0) {
+        const myBidsBlock = document.createElement('div');
+        myBidsBlock.className = 'auction-my-bids';
+
+        const title = document.createElement('div');
+        title.className = 'auction-my-bids-title';
+        title.textContent = t('label_my_bids');
+        myBidsBlock.appendChild(title);
+
+        myBids.forEach(b => {
+            const row = document.createElement('div');
+            row.className = 'auction-my-bid-row';
+
+            const textContainer = document.createElement('div');
+            textContainer.className = 'auction-bid-text-container';
+
+            const amountEl = document.createElement('div');
+            amountEl.className = 'auction-bid-amount';
+            amountEl.textContent = formatCurrency(Number(b.amount || 0));
+            textContainer.appendChild(amountEl);
+
+            const createdAt = b.created_at ? formatDate(b.created_at) : '';
+            if (createdAt) {
+                const dateEl = document.createElement('div');
+                dateEl.className = 'auction-bid-date';
+                dateEl.textContent = createdAt;
+                textContainer.appendChild(dateEl);
+            }
+
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'btn btn-secondary auction-cancel-button';
+            cancelBtn.textContent = t('btn_cancel_bid');
+            cancelBtn.addEventListener('click', async () => {
+                await cancelAuctionBid(b.bid_id);
+            });
+
+            row.appendChild(textContainer);
+            row.appendChild(cancelBtn);
+            myBidsBlock.appendChild(row);
+        });
+
+        actions.appendChild(myBidsBlock);
+    }
+
+    info.appendChild(actions);
+    item.appendChild(info);
+    return item;
+}
+
+async function placeAuctionBid(propertyId, amount) {
+    try {
+        const initData = getInitData();
+        if (!initData) return;
+
+        // Build URL with account_id parameter if representing
+        let url = '/api/mini-app/auction/bid';
+        if (__currentAccountId !== null) {
+            url += `?account_id=${__currentAccountId}`;
+        }
+
+        const resp = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': 'tma ' + initData,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ property_id: propertyId, amount: amount }),
+        });
+
+        if (!resp.ok) {
+            let detail = null;
+            try {
+                const data = await resp.json();
+                detail = data?.detail || null;
+            } catch (e) {
+                // ignore
+            }
+
+            if (detail === 'BID_TOO_LOW') {
+                tg.showAlert(t('err_bid_too_low'));
+                return;
+            }
+            tg.showAlert(t('err_failed_to_place_bid'));
+            return;
+        }
+
+        tg.showAlert(t('msg_bid_placed'));
+        await loadAuction();
+    } catch (error) {
+        console.error('Error placing bid:', error);
+        tg.showAlert(t('err_network'));
+    }
+}
+
+async function cancelAuctionBid(bidId) {
+    try {
+        const initData = getInitData();
+        if (!initData) return;
+
+        // Build URL with account_id parameter if representing
+        let url = '/api/mini-app/auction/bid/cancel';
+        if (__currentAccountId !== null) {
+            url += `?account_id=${__currentAccountId}`;
+        }
+
+        const resp = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': 'tma ' + initData,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ bid_id: bidId }),
+        });
+
+        if (!resp.ok) {
+            tg.showAlert(t('err_failed_to_cancel_bid'));
+            return;
+        }
+
+        tg.showAlert(t('msg_bid_canceled'));
+        await loadAuction();
+    } catch (error) {
+        console.error('Error canceling bid:', error);
+        tg.showAlert(t('err_network'));
+    }
+}
+
+function renderAuctionJournal(entries) {
+    const container = document.getElementById('auction-journal-list');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    if (!entries || entries.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'empty-state';
+        empty.textContent = t('msg_no_auction_journal');
+        container.appendChild(empty);
+        return;
+    }
+
+    entries.forEach(e => {
+        const row = document.createElement('div');
+        row.className = 'auction-journal-entry';
+
+        const left = document.createElement('div');
+        left.className = 'auction-journal-left';
+        const action = e.action === 'cancel' ? t('label_action_cancel') : t('label_action_bid');
+        const when = e.timestamp ? formatDate(e.timestamp) : '';
+        const who = e.bidder_name ? ` · ${e.bidder_name}` : '';
+        left.textContent = `${action}${who} · ${e.property_name}${when ? ' · ' + when : ''}`;
+
+        const right = document.createElement('div');
+        right.className = 'auction-journal-right';
+        right.textContent = formatCurrency(Number(e.amount || 0));
+
+        row.appendChild(left);
+        row.appendChild(right);
+        container.appendChild(row);
+    });
 }
 
 /**
@@ -1698,15 +2093,14 @@ function renderProperties(properties) {
         if (property.share_weight) {
             const weightBadge = document.createElement('span');
             weightBadge.className = 'property-badge';
-            weightBadge.textContent = `${t('label_weight')}: ${property.share_weight}`;
+            weightBadge.textContent = `${t('label_weight')}: ${formatPercent(property.share_weight)}`;
             metaEl.appendChild(weightBadge);
         }
 
         if (property.sale_price) {
             const priceBadge = document.createElement('span');
             priceBadge.className = 'property-badge';
-            const price = parseFloat(property.sale_price);
-            const formattedPrice = formatCurrency(price);
+            const formattedPrice = formatCurrency(Number(property.sale_price || 0));
             priceBadge.textContent = formattedPrice;
             metaEl.appendChild(priceBadge);
         }

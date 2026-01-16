@@ -35,7 +35,7 @@ export ENV
 .PHONY: help seed test lint format sync install preflight serve stop db-reset backup restore dead-code coverage coverage-seeding check-i18n clean restart
 
 help: ## Show available make targets
-	@awk 'BEGIN {FS=":.*##"; printf "\nTargets:\n"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS=":.*##"; printf "\nTargets:\n"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  make %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # ============================================================================
 # Production Deployment
