@@ -1,8 +1,10 @@
 """Service period management handlers with conversation state machine."""
 
+import asyncio
 import logging
 from datetime import date
 
+import httpx
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -12,6 +14,7 @@ from telegram import (
 )
 from telegram.ext import ContextTypes
 
+from src.bot.handlers.error_utils import handle_conversation_error
 from src.services import AsyncSessionLocal, ServicePeriodService
 from src.services.auth_service import verify_bot_admin_authorization
 from src.services.localizer import t
@@ -140,13 +143,8 @@ async def handle_periods_command(update: Update, context: ContextTypes.DEFAULT_T
 
         return States.SELECT_ACTION
 
-    except Exception as e:
-        logger.error("Error starting periods workflow: %s", e, exc_info=True)
-        try:
-            await update.message.reply_text(t("err_processing"))
-        except Exception:
-            pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "starting periods workflow")
 
 
 async def handle_period_action_selection(  # noqa: C901
@@ -232,13 +230,8 @@ async def handle_period_action_selection(  # noqa: C901
             await cq.edit_message_text(t("err_processing"))
             return States.END
 
-    except Exception as e:
-        logger.error("Error in period action selection: %s", e, exc_info=True)
-        try:
-            await update.callback_query.edit_message_text(t("err_processing"))
-        except Exception:
-            logger.debug("Could not edit message after error", exc_info=True)
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "in period action selection")
 
 
 async def handle_period_start_date_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -269,13 +262,8 @@ async def handle_period_start_date_input(update: Update, context: ContextTypes.D
         await update.message.reply_text(t("prompt_period_months"))
         return States.INPUT_PERIOD_MONTHS
 
-    except Exception as e:
-        logger.error("Error in period start date input: %s", e, exc_info=True)
-        try:
-            await update.message.reply_text(t("err_processing"))
-        except Exception:
-            pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "in period start date input")
 
 
 async def handle_period_months_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -344,13 +332,8 @@ async def handle_period_months_input(update: Update, context: ContextTypes.DEFAU
 
             return States.END
 
-    except Exception as e:
-        logger.error("Error in period months input: %s", e, exc_info=True)
-        try:
-            await update.message.reply_text(t("err_processing"))
-        except Exception:
-            pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "in period months input")
 
 
 async def handle_close_period_confirmation(
@@ -403,13 +386,10 @@ async def handle_close_period_confirmation(
 
             return States.END
 
-    except Exception as e:
-        logger.error("Error closing period: %s", e, exc_info=True)
-        try:
-            await update.callback_query.edit_message_text(t("err_processing"))
-        except Exception:
-            pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(
+            e, update, "closing period", cleanup_fn=_clear_periods_context, context=context
+        )
 
 
 __all__ = [

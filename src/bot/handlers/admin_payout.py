@@ -1,9 +1,11 @@
 """Payout (transaction) management handlers with conversation state machine."""
 
+import asyncio
 import logging
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
+import httpx
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -13,6 +15,7 @@ from telegram import (
 )
 from telegram.ext import ContextTypes
 
+from src.bot.handlers.error_utils import handle_conversation_error
 from src.models.account import AccountType
 from src.services import AsyncSessionLocal
 from src.services.auth_service import verify_bot_admin_authorization
@@ -186,14 +189,8 @@ async def handle_payout_command(update: Update, context: ContextTypes.DEFAULT_TY
 
             return States.SELECT_FROM
 
-    except Exception as e:
-        logger.error("Error starting payout workflow: %s", e, exc_info=True)
-        if update.message:
-            try:
-                await update.message.reply_text(t("err_processing"))
-            except Exception:
-                pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "starting payout workflow")
 
 
 async def handle_from_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:  # noqa: C901
@@ -273,16 +270,8 @@ async def handle_from_selection(update: Update, context: ContextTypes.DEFAULT_TY
 
             return States.SELECT_TO
 
-    except Exception as e:
-        logger.error("Error handling from selection: %s", e, exc_info=True)
-        if update.callback_query:
-            try:
-                await update.callback_query.edit_message_text(
-                    t("err_processing"), reply_markup=InlineKeyboardMarkup([])
-                )
-            except Exception:
-                pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "handling from selection")
 
 
 async def handle_to_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:  # noqa: C901
@@ -388,16 +377,8 @@ async def handle_to_selection(update: Update, context: ContextTypes.DEFAULT_TYPE
 
             return States.ENTER_AMOUNT
 
-    except Exception as e:
-        logger.error("Error handling to selection: %s", e, exc_info=True)
-        if update.callback_query:
-            try:
-                await update.callback_query.edit_message_text(
-                    t("err_processing"), reply_markup=InlineKeyboardMarkup([])
-                )
-            except Exception:
-                pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "handling to selection")
 
 
 async def handle_amount_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -450,14 +431,8 @@ async def handle_amount_input(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         return States.ENTER_TRANSACTION_DATE
 
-    except Exception as e:
-        logger.error("Error handling amount input: %s", e, exc_info=True)
-        if update.message:
-            try:
-                await update.message.reply_text(t("err_processing"))
-            except Exception:
-                pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "handling amount input")
 
 
 async def handle_transaction_date_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -508,14 +483,8 @@ async def handle_transaction_date_input(update: Update, context: ContextTypes.DE
 
             return States.ENTER_DESCRIPTION
 
-    except Exception as e:
-        logger.error("Error handling transaction date input: %s", e, exc_info=True)
-        if update.message:
-            try:
-                await update.message.reply_text(t("err_processing"))
-            except Exception:
-                pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "handling transaction date input")
 
 
 async def handle_description_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -581,14 +550,8 @@ async def handle_description_input(update: Update, context: ContextTypes.DEFAULT
 
         return States.CONFIRM
 
-    except Exception as e:
-        logger.error("Error handling description input: %s", e, exc_info=True)
-        if update.message:
-            try:
-                await update.message.reply_text(t("err_processing"))
-            except Exception:
-                pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "handling description input")
 
 
 async def handle_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -638,17 +601,10 @@ async def handle_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         return States.END
 
-    except Exception as e:
-        logger.error("Error handling confirm: %s", e, exc_info=True)
-        if update.callback_query:
-            try:
-                await update.callback_query.edit_message_text(
-                    t("err_processing"), reply_markup=InlineKeyboardMarkup([])
-                )
-            except Exception:
-                pass
-        _clear_payout_context(context)
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(
+            e, update, "handling confirm", cleanup_fn=_clear_payout_context, context=context
+        )
 
 
 def _parse_confirm_action(callback_data: str) -> str:
@@ -727,6 +683,12 @@ async def _create_and_notify_payout_transaction(
                 parse_mode="HTML",
             )
 
+        except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError) as e:
+            logger.error("Network error creating transaction: %s", e, exc_info=True)
+            await session.rollback()
+            await cq.edit_message_text(
+                t("err_network_retry"), reply_markup=InlineKeyboardMarkup([])
+            )
         except Exception as e:
             logger.error("Error creating transaction: %s", e, exc_info=True)
             await session.rollback()

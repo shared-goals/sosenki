@@ -1,8 +1,10 @@
 """Electricity bills management handlers with conversation state machine."""
 
+import asyncio
 import logging
 from decimal import Decimal, InvalidOperation
 
+import httpx
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -12,6 +14,7 @@ from telegram import (
 )
 from telegram.ext import ContextTypes
 
+from src.bot.handlers.error_utils import handle_conversation_error
 from src.models.service_period import ServicePeriod
 from src.models.user import User
 from src.services import AsyncSessionLocal, BillsService, ServicePeriodService
@@ -238,13 +241,8 @@ async def handle_bills_command(  # noqa: C901
 
             return States.SELECT_PERIOD
 
-    except Exception as e:
-        logger.error("Error starting bills workflow: %s", e, exc_info=True)
-        try:
-            await update.message.reply_text(t("err_processing"))
-        except Exception:
-            pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "starting bills workflow")
 
 
 async def handle_period_selection(  # noqa: C901
@@ -311,13 +309,8 @@ async def handle_period_selection(  # noqa: C901
 
             return States.SELECT_ACTION
 
-    except Exception as e:
-        logger.error("Error in period selection: %s", e, exc_info=True)
-        try:
-            await update.callback_query.edit_message_text(t("err_processing"))
-        except Exception:
-            logger.debug("Could not edit message after error", exc_info=True)
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "in period selection")
 
 
 async def handle_action_selection(  # noqa: C901
@@ -351,13 +344,8 @@ async def handle_action_selection(  # noqa: C901
             await cq.edit_message_text(t("err_processing"))
             return States.END
 
-    except Exception as e:
-        logger.error("Error in action selection: %s", e, exc_info=True)
-        try:
-            await update.callback_query.edit_message_text(t("err_processing"))
-        except Exception:
-            pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "in action selection")
 
 
 async def _start_electricity_workflow(
@@ -396,9 +384,8 @@ async def _start_electricity_workflow(
 
             return States.INPUT_METER_START
 
-    except Exception as e:
-        logger.error("Error starting electricity workflow: %s", e, exc_info=True)
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "starting electricity workflow")
 
 
 async def _start_budget_workflow(
@@ -456,9 +443,8 @@ async def _start_budget_workflow(
 
             return States.INPUT_MAIN_BUDGET
 
-    except Exception as e:
-        logger.error("Error starting budget workflow: %s", e, exc_info=True)
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "starting budget workflow")
 
 
 async def handle_electricity_meter_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -478,13 +464,8 @@ async def handle_electricity_meter_start(update: Update, context: ContextTypes.D
         await update.message.reply_text(t("prompt_meter_end"))
         return States.INPUT_METER_END
 
-    except Exception as e:
-        logger.error("Error in meter start input: %s", e, exc_info=True)
-        try:
-            await update.message.reply_text(t("err_processing"))
-        except Exception:
-            pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "in meter start input")
 
 
 async def handle_electricity_meter_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -513,13 +494,8 @@ async def handle_electricity_meter_end(update: Update, context: ContextTypes.DEF
         await update.message.reply_text(t("prompt_multiplier"), reply_markup=keyboard)
         return States.INPUT_MULTIPLIER
 
-    except Exception as e:
-        logger.error("Error in meter end input: %s", e, exc_info=True)
-        try:
-            await update.message.reply_text(t("err_processing"))
-        except Exception:
-            pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "in meter end input")
 
 
 async def handle_electricity_multiplier(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -543,13 +519,8 @@ async def handle_electricity_multiplier(update: Update, context: ContextTypes.DE
         await update.message.reply_text(t("prompt_rate"), reply_markup=keyboard)
         return States.INPUT_RATE
 
-    except Exception as e:
-        logger.error("Error in multiplier input: %s", e, exc_info=True)
-        try:
-            await update.message.reply_text(t("err_processing"))
-        except Exception:
-            pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "in multiplier input")
 
 
 async def handle_electricity_rate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -682,13 +653,8 @@ async def handle_electricity_losses(  # noqa: C901
             # Show the proposed bills table with owner shares and summary (skip state 9)
             return await _show_electricity_bills_table(update, context)
 
-    except Exception as e:
-        logger.error("Error in losses input: %s", e, exc_info=True)
-        try:
-            await update.message.reply_text(t("err_processing"))
-        except Exception:
-            pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "in losses input")
 
 
 async def _show_electricity_bills_table(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -766,9 +732,8 @@ async def _show_electricity_bills_table(update: Update, context: ContextTypes.DE
 
         return States.CONFIRM_ELECTRICITY_BILLS
 
-    except Exception as e:
-        logger.error("Error showing bills table: %s", e, exc_info=True)
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "showing bills table")
 
 
 async def handle_electricity_create_bills(  # noqa: C901
@@ -870,13 +835,8 @@ async def handle_electricity_create_bills(  # noqa: C901
                     pass
                 return States.END
 
-    except Exception as e:
-        logger.error("Error in create bills handler: %s", e, exc_info=True)
-        try:
-            await update.callback_query.edit_message_text(t("err_processing"))
-        except Exception:
-            pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "in create bills handler")
 
 
 async def handle_budget_main_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -907,13 +867,8 @@ async def handle_budget_main_input(update: Update, context: ContextTypes.DEFAULT
 
         return States.INPUT_CONSERVATION_BUDGET
 
-    except Exception as e:
-        logger.error("Error in main budget input: %s", e, exc_info=True)
-        try:
-            await update.message.reply_text(t("err_processing"))
-        except Exception:
-            pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "in main budget input")
 
 
 async def handle_budget_conservation_input(  # noqa: C901
@@ -999,13 +954,8 @@ async def handle_budget_conservation_input(  # noqa: C901
             # Show confirmation table
             return await _show_budget_bills_table(update, context)
 
-    except Exception as e:
-        logger.error("Error in conservation budget input: %s", e, exc_info=True)
-        try:
-            await update.message.reply_text(t("err_processing"))
-        except Exception:
-            pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "in conservation budget input")
 
 
 async def _show_budget_bills_table(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1104,9 +1054,8 @@ async def _show_budget_bills_table(update: Update, context: ContextTypes.DEFAULT
 
         return States.CONFIRM_BUDGET_BILLS
 
-    except Exception as e:
-        logger.error("Error showing budget bills table: %s", e, exc_info=True)
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "showing budget bills table")
 
 
 async def handle_budget_create_bills(  # noqa: C901
@@ -1179,13 +1128,8 @@ async def handle_budget_create_bills(  # noqa: C901
             _clear_budget_context(context)
             return States.END
 
-    except Exception as e:
-        logger.error("Error in create budget bills handler: %s", e, exc_info=True)
-        try:
-            await cq.edit_message_text(t("err_processing"))
-        except Exception:
-            pass
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "in create budget bills handler")
 
 
 __all__ = [

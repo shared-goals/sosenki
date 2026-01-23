@@ -195,37 +195,46 @@ class TestElectricityBillsIntegration:
     async def test_full_electricity_workflow_calculation(self):
         """Test complete electricity calculation workflow."""
         async with AsyncSessionLocal() as session:
-            # Create test data matching real seeding scenario
-            user = User(name=get_unique_name("testuser"), is_owner=True)
-            account = Account(name="TestUser Account", account_type=AccountType.OWNER, user=user)
+            # Use SAVEPOINT for proper transaction isolation
+            async with session.begin_nested():
+                # Create test data matching real seeding scenario
+                user = User(name=get_unique_name("testuser"), is_owner=True)
+                session.add(user)
+                await session.flush()  # Get user ID
 
-            period = ServicePeriod(
-                name=get_unique_name("electricity-period"),
-                start_date=date(2025, 7, 1),
-                end_date=date(2025, 8, 31),
-                status=PeriodStatus.OPEN,
-                electricity_start=Decimal("123.43"),
-                electricity_end=Decimal("193.74"),
-                electricity_multiplier=Decimal("200"),
-                electricity_rate=Decimal("9.22"),
-                electricity_losses=Decimal("0.2"),
-            )
+                account = Account(
+                    name=get_unique_name("TestUserAccount"),
+                    account_type=AccountType.OWNER,
+                    user=user,
+                )
 
-            session.add_all([user, account, period])
-            await session.commit()
+                period = ServicePeriod(
+                    name=get_unique_name("electricity-period"),
+                    start_date=date(2025, 7, 1),
+                    end_date=date(2025, 8, 31),
+                    status=PeriodStatus.OPEN,
+                    electricity_start=Decimal("123.43"),
+                    electricity_end=Decimal("193.74"),
+                    electricity_multiplier=Decimal("200"),
+                    electricity_rate=Decimal("9.22"),
+                    electricity_losses=Decimal("0.2"),
+                )
 
-            # Calculate total (static method - no await needed)
-            total = BillsService.calculate_total_electricity(
-                period.electricity_start,
-                period.electricity_end,
-                period.electricity_multiplier,
-                period.electricity_rate,
-                period.electricity_losses,
-            )
+                session.add_all([account, period])
+                await session.flush()  # Get IDs without committing
 
-            assert total > 0
-            # Sanity check: consumption is ~70 kWh, multiplier 200, rate 9.22, loss multiplier 1.2
-            # ~70 * 200 * 9.22 * 1.2 = ~155,808
-            assert total <= Decimal("200000.00")
+                # Calculate total (static method - no await needed)
+                total = BillsService.calculate_total_electricity(
+                    period.electricity_start,
+                    period.electricity_end,
+                    period.electricity_multiplier,
+                    period.electricity_rate,
+                    period.electricity_losses,
+                )
 
-            await session.rollback()
+                assert total > 0
+                # Sanity check: consumption is ~70 kWh, multiplier 200, rate 9.22, loss multiplier 1.2
+                # ~70 * 200 * 9.22 * 1.2 = ~155,808
+                assert total <= Decimal("200000.00")
+
+            # Nested transaction will auto-rollback when exiting context

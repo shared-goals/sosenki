@@ -1,9 +1,11 @@
 """Electricity meter reading management handlers with conversation state machine."""
 
+import asyncio
 import logging
 from datetime import date
 from decimal import Decimal
 
+import httpx
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -14,6 +16,7 @@ from telegram import (
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
+from src.bot.handlers.error_utils import handle_conversation_error
 from src.models import ElectricityReading
 from src.services import AsyncSessionLocal
 from src.services.auth_service import verify_bot_admin_or_staff_authorization
@@ -193,14 +196,8 @@ async def _show_property_selection(  # noqa: C901
 
             return States.SELECT_PROPERTY
 
-    except Exception as e:
-        logger.exception(f"Error showing property selection: {e}")
-        error_msg = t("err_processing")
-        if update.callback_query is not None:
-            await update.callback_query.edit_message_text(error_msg)
-        elif update.message is not None:
-            await update.message.reply_text(error_msg)
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(e, update, "showing property selection")
 
 
 async def handle_meter_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -252,11 +249,10 @@ async def handle_meter_command(update: Update, context: ContextTypes.DEFAULT_TYP
         # Show property selection using helper
         return await _show_property_selection(update, context)
 
-    except Exception as e:
-        logger.exception(f"Error in /meter command: {e}")
-        await update.message.reply_text(t("err_processing"))
-        _clear_meter_context(context)
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(
+            e, update, "in /meter command", cleanup_fn=_clear_meter_context, context=context
+        )
 
 
 async def handle_show_empty_properties(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -313,11 +309,10 @@ async def handle_show_empty_properties(update: Update, context: ContextTypes.DEF
 
             return States.SELECT_PROPERTY
 
-    except Exception as e:
-        logger.exception(f"Error showing empty properties: {e}")
-        await query.edit_message_text(t("err_processing"))
-        _clear_meter_context(context)
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(
+            e, update, "showing empty properties", cleanup_fn=_clear_meter_context, context=context
+        )
 
 
 async def handle_property_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -421,11 +416,10 @@ async def handle_property_selection(update: Update, context: ContextTypes.DEFAUL
 
             return States.SELECT_ACTION
 
-    except Exception as e:
-        logger.exception(f"Error in property selection: {e}")
-        await query.edit_message_text(t("err_processing"))
-        _clear_meter_context(context)
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(
+            e, update, "in property selection", cleanup_fn=_clear_meter_context, context=context
+        )
 
 
 async def handle_action_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:  # noqa: C901
@@ -617,11 +611,10 @@ async def handle_delete_confirmation(update: Update, context: ContextTypes.DEFAU
             # Return to property selection
             return await _show_property_selection(update, context, success_msg)
 
-    except Exception as e:
-        logger.exception(f"Error deleting reading: {e}")
-        await query.edit_message_text(t("err_processing"))
-        _clear_meter_context(context)
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(
+            e, update, "deleting reading", cleanup_fn=_clear_meter_context, context=context
+        )
 
 
 async def handle_date_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -948,8 +941,7 @@ async def handle_final_confirmation(update: Update, context: ContextTypes.DEFAUL
             # Return to property selection with success message
             return await _show_property_selection(update, context, success_msg)
 
-    except Exception as e:
-        logger.exception(f"Error processing meter reading: {e}")
-        await query.edit_message_text(t("err_processing"))
-        _clear_meter_context(context)
-        return States.END
+    except (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, Exception) as e:
+        return await handle_conversation_error(
+            e, update, "processing meter reading", cleanup_fn=_clear_meter_context, context=context
+        )

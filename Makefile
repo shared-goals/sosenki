@@ -1,7 +1,6 @@
 # ============================================================================
 # Roadmap (commit-based milestones)
 # ============================================================================
-# TODO feat: Invest tracking module
 # TODO feat: Make balance for staff with generated bills as salaries
 # TODO feat: Adopt dev environment in the LAN with prod - edit caddy template for dev host and 8443 port
 # TODO security: Add auth_date expiration check (±5min) in user_service.py - replay attack risk
