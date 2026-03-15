@@ -3,10 +3,10 @@
 import os
 from logging.config import fileConfig
 
+from alembic import context
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 
-from alembic import context
 from src.models import Base
 
 # Load environment variables

@@ -1,15 +1,20 @@
 """Telegram bot application factory."""
 
+import logging
 import warnings
 
+from telegram import Update
+from telegram.error import NetworkError, TimedOut
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
     CommandHandler,
+    ContextTypes,
     ConversationHandler,
     MessageHandler,
     filters,
 )
+from telegram.request import HTTPXRequest
 from telegram.warnings import PTBUserWarning
 
 from src.bot.config import bot_config
@@ -70,8 +75,25 @@ from src.bot.handlers.admin_periods import (
 from src.bot.handlers.admin_requests import handle_admin_callback, handle_admin_response
 from src.bot.handlers.ask import handle_ask_command
 from src.bot.handlers.common import handle_request_command, handle_start_command
+from src.services.localizer import t
 
-# logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
+
+
+async def _global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Safety-net: log all uncaught exceptions and notify user."""
+    err = context.error
+    is_network = isinstance(err, (TimedOut, NetworkError))
+    logger.error("Unhandled %s: %s", type(err).__name__, err, exc_info=err)
+    if not isinstance(update, Update):
+        return
+    msg = t("err_network_retry") if is_network else t("err_processing")
+    try:
+        if update.effective_message:
+            await update.effective_message.reply_text(msg)
+    except Exception:
+        logger.debug("Could not send error notification to user", exc_info=True)
+
 
 # Conversation states for service periods
 PERIOD_SELECT_ACTION = 10
@@ -101,7 +123,11 @@ async def create_bot_app() -> Application:
     # per_message=False is appropriate when using mixed handler types
     warnings.filterwarnings("ignore", message=".*per_message.*", category=PTBUserWarning)
 
-    app = Application.builder().token(bot_config.telegram_bot_token).build()
+    builder = Application.builder().token(bot_config.telegram_bot_token)
+    if bot_config.all_proxy:
+        builder = builder.request(HTTPXRequest(proxy=bot_config.all_proxy))
+    app = builder.build()
+    app.add_error_handler(_global_error_handler)
 
     # /start command handler
     app.add_handler(CommandHandler("start", handle_start_command))

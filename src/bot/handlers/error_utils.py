@@ -6,6 +6,7 @@ from typing import Optional
 
 import httpx
 from telegram import InlineKeyboardMarkup, Update
+from telegram.error import NetworkError, TimedOut
 from telegram.ext import ContextTypes
 
 from src.services.localizer import t
@@ -34,7 +35,8 @@ async def handle_conversation_error(
     """
     # Determine error type and message
     is_network_error = isinstance(
-        e, (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError)
+        e,
+        (httpx.ConnectError, httpx.TimeoutException, asyncio.TimeoutError, TimedOut, NetworkError),
     )
     error_type = "Network error" if is_network_error else "Error"
     error_msg = t("err_network_retry") if is_network_error else t("err_processing")

@@ -24,6 +24,7 @@ class TestCreateBotApp:
 
             with patch("src.bot.bot_config") as mock_config:
                 mock_config.telegram_bot_token = "test_token"
+                mock_config.all_proxy = ""
                 with patch("src.bot.CommandHandler"):
                     with patch("src.bot.MessageHandler"):
                         with patch("src.bot.CallbackQueryHandler"):
@@ -46,6 +47,7 @@ class TestCreateBotApp:
 
             with patch("src.bot.bot_config") as mock_config:
                 mock_config.telegram_bot_token = "test_token"
+                mock_config.all_proxy = ""
                 with patch("src.bot.CommandHandler"):
                     with patch("src.bot.MessageHandler"):
                         with patch("src.bot.CallbackQueryHandler"):
@@ -71,6 +73,7 @@ class TestCreateBotApp:
 
             with patch("src.bot.bot_config") as mock_config:
                 mock_config.telegram_bot_token = "test_token"
+                mock_config.all_proxy = ""
                 with patch("src.bot.CommandHandler"):
                     with patch("src.bot.MessageHandler") as mock_msg_handler_class:
                         with patch("src.bot.CallbackQueryHandler"):
@@ -96,6 +99,7 @@ class TestCreateBotApp:
 
             with patch("src.bot.bot_config") as mock_config:
                 mock_config.telegram_bot_token = "test_token"
+                mock_config.all_proxy = ""
                 with patch("src.bot.CommandHandler"):
                     with patch("src.bot.MessageHandler"):
                         with patch("src.bot.CallbackQueryHandler") as mock_callback_class:
@@ -106,6 +110,31 @@ class TestCreateBotApp:
                                     # Verify CallbackQueryHandler was instantiated
                                     # Note: Should be called at least once for admin callback
                                     assert mock_callback_class.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_create_bot_app_with_proxy(self):
+        """Test bot app passes HTTPXRequest to builder when ALL_PROXY is set."""
+        with patch("src.bot.Application") as mock_app_class:
+            mock_app_builder = MagicMock()
+            mock_app_instance = MagicMock()
+            mock_app_builder.token.return_value = mock_app_builder
+            mock_app_builder.request.return_value = mock_app_builder
+            mock_app_builder.build.return_value = mock_app_instance
+            mock_app_class.builder.return_value = mock_app_builder
+
+            with patch("src.bot.bot_config") as mock_config:
+                mock_config.telegram_bot_token = "test_token"
+                mock_config.all_proxy = "socks5h://127.0.0.1:1080"
+                with patch("src.bot.HTTPXRequest") as mock_httpx_request:
+                    with patch("src.bot.CommandHandler"):
+                        with patch("src.bot.MessageHandler"):
+                            with patch("src.bot.CallbackQueryHandler"):
+                                await create_bot_app()
+
+                                mock_httpx_request.assert_called_once_with(
+                                    proxy="socks5h://127.0.0.1:1080"
+                                )
+                                mock_app_builder.request.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_create_bot_app_returns_application_instance(self):
@@ -121,6 +150,7 @@ class TestCreateBotApp:
 
             with patch("src.bot.bot_config") as mock_config:
                 mock_config.telegram_bot_token = "test_token"
+                mock_config.all_proxy = ""
                 with patch("src.bot.CommandHandler"):
                     with patch("src.bot.MessageHandler"):
                         with patch("src.bot.CallbackQueryHandler"):

@@ -33,6 +33,7 @@ class BotConfig(BaseSettings):
     # Will be set by setup-environment.sh at runtime
     telegram_mini_app_id: str
     mini_app_url: str = ""
+    all_proxy: str = ""
 
     # Admin telegram ID is now loaded from database via get_admin_telegram_id()
     admin_telegram_id: str = ""  # Will be set dynamically when needed
