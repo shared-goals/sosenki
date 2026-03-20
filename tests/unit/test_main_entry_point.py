@@ -140,14 +140,31 @@ async def test_run_webhook_mode_no_webhook_url():
 
 
 @pytest.mark.asyncio
-async def test_main_webhook_mode_argument():
-    """Test main() parses webhook mode argument correctly."""
+async def test_main_webhook_mode_when_webhook_url_set():
+    """Test main() uses webhook mode when WEBHOOK_URL is set."""
     from src.main import main
 
     with patch("src.main.asyncio.run", side_effect=_close_coroutine) as mock_run:
-        with patch("sys.argv", ["prog", "--mode", "webhook", "--port", "9000"]):
-            main()
-            mock_run.assert_called_once()
+        with patch("sys.argv", ["prog", "--port", "9000"]):
+            with patch.dict(os.environ, {"WEBHOOK_URL": "https://example.com/webhook"}):
+                main()
+                mock_run.assert_called_once()
+                coro = mock_run.call_args[0][0]
+                assert coro.__name__ == "run_webhook_mode"
+
+
+@pytest.mark.asyncio
+async def test_main_polling_mode_when_no_webhook_url():
+    """Test main() uses polling mode when WEBHOOK_URL is not set."""
+    from src.main import main
+
+    with patch("src.main.asyncio.run", side_effect=_close_coroutine) as mock_run:
+        with patch("sys.argv", ["prog", "--port", "9000"]):
+            with patch.dict(os.environ, {"WEBHOOK_URL": ""}):
+                main()
+                mock_run.assert_called_once()
+                coro = mock_run.call_args[0][0]
+                assert coro.__name__ == "run_polling_mode"
 
 
 @pytest.mark.asyncio

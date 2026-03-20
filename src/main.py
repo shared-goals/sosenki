@@ -125,6 +125,59 @@ async def run_webhook_mode(host: str = "0.0.0.0", port: int = 8000):
     await server.serve()
 
 
+async def run_polling_mode(host: str = "0.0.0.0", port: int = 8000):
+    """Run application in polling mode (no public webhook URL required).
+
+    The FastAPI webapp (Mini App API) always runs alongside the polling bot.
+    """
+    logger.info(f"Starting bot in polling mode on {host}:{port}")
+
+    global bot_app
+
+    bot_app = await create_bot_app()
+
+    # Wire bot into FastAPI so Mini App API routes have access to it
+    await setup_webhook_route(bot_app)
+
+    logger.info("Initializing bot Application...")
+    await bot_app.initialize()
+    logger.info("Bot Application initialized")
+
+    # Clear any stale webhook registration with Telegram
+    await bot_app.bot.delete_webhook(drop_pending_updates=True)
+    logger.info("Telegram webhook cleared")
+
+    # Start polling (PTB v20 async — starts background task, non-blocking)
+    await bot_app.updater.start_polling(drop_pending_updates=True)
+    await bot_app.start()
+    logger.info("Bot polling started")
+
+    async def shutdown_bot():
+        global bot_app
+        if bot_app:
+            try:
+                await bot_app.updater.stop()
+                await bot_app.stop()
+                await bot_app.shutdown()
+                logger.info("Bot Application shutdown complete")
+            except Exception as e:
+                logger.error(f"Error shutting down bot: {e}")
+
+    # Register shutdown with FastAPI
+    app.add_event_handler("shutdown", shutdown_bot)
+
+    logger.info(f"Starting Uvicorn server on {host}:{port}...")
+    config = uvicorn.Config(
+        app=app,
+        host=host,
+        port=port,
+        log_level="info",
+        timeout_graceful_shutdown=1,
+    )
+    server = uvicorn.Server(config)
+    await server.serve()
+
+
 def main():
     """Main entry point."""
     import argparse
@@ -137,20 +190,22 @@ def main():
     default_port = int(port_env)
 
     parser = argparse.ArgumentParser(description="SOSenki Bot")
-    parser.add_argument(
-        "--mode",
-        choices=["webhook"],
-        default="webhook",
-        help="Run mode (webhook only - polling not supported)",
-    )
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     parser.add_argument("--port", type=int, default=default_port, help="Port to bind to")
 
     args = parser.parse_args()
 
-    # Only webhook mode is supported (mini app requires HTTP)
+    # Auto-detect mode: webhook if WEBHOOK_URL is set, polling otherwise
+    webhook_url = os.getenv("WEBHOOK_URL", "").strip()
+    if webhook_url:
+        logger.info("WEBHOOK_URL set — starting in webhook mode")
+        run = run_webhook_mode(args.host, args.port)
+    else:
+        logger.info("WEBHOOK_URL not set — starting in polling mode")
+        run = run_polling_mode(args.host, args.port)
+
     try:
-        asyncio.run(run_webhook_mode(args.host, args.port))
+        asyncio.run(run)
     except KeyboardInterrupt:
         logger.info("Server stopped by user")
         raise SystemExit(0) from None

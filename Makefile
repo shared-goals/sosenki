@@ -31,7 +31,7 @@ export TELEGRAM_BOT_NAME
 export TELEGRAM_MINI_APP_ID
 export ENV
 
-.PHONY: help seed test lint format sync install preflight serve stop db-reset backup restore dead-code coverage coverage-seeding check-i18n clean restart
+.PHONY: help seed test lint format sync install preflight serve stop start db-reset backup restore dead-code coverage coverage-seeding check-i18n clean restart
 
 help: ## Show available make targets
 	@awk 'BEGIN {FS=":.*##"; printf "\nTargets:\n"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  make %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -101,7 +101,7 @@ preflight: ## Run preflight checks for target ENV
 		echo ""; \
 		echo "Step 9: Running test suite (prod only)..."; \
 		rm test_sosenki.db; \
-		uv run pytest tests/ -q --tb=short > /tmp/preflight-tests.log 2>&1 || \
+		uv run python -m pytest tests/ -q --tb=short > /tmp/preflight-tests.log 2>&1 || \
 			(echo "❌ Test suite failed. Details:"; tail -50 /tmp/preflight-tests.log; exit 1); \
 		echo "✅ All tests passed"; \
 	fi
@@ -177,10 +177,10 @@ sync: ## Install/update Python dependencies (dev)
 	uv sync
 
 test: stop ## Run tests (stops server before running)
-	uv run pytest tests/ -v
+	uv run python -m pytest tests/ -v
 
 test-seeding: ## Run seeding-specific tests
-	uv run pytest seeding/tests/ -v
+	uv run python -m pytest seeding/tests/ -v
 
 lint: ## Run lint checks via ruff
 	uv run ruff check .
@@ -253,7 +253,7 @@ dead-code: ## Analyze dead code with vulture and custom script
 
 # Coverage report (src/ tests only, excluding seeding)
 coverage: ## Run coverage report for src/ tests
-	uv run pytest tests/ --cov=src --cov-report=term-missing --cov-report=html -q
+	uv run python -m pytest tests/ --cov=src --cov-report=term-missing --cov-report=html -q
 	@echo ""
 	@echo "✓ Coverage report complete"
 	@echo "Open htmlcov/index.html to view detailed coverage report"
@@ -299,7 +299,7 @@ serve: stop ## Run bot + mini app webhook environment
 	echo "Logs: logs/server.log" && \
 	echo "Press Ctrl+C to stop" && \
 	echo "" && \
-	uv run python -m src.main --mode webhook
+	uv run python -m src.main
 
 # Clean generated artifacts
 clean: ## Remove generated artifacts (cache, coverage, logs)
@@ -353,6 +353,10 @@ upgrade: backup ## Apply production schema migrations (runs backup first)
 restart: ## Restart the sosenki systemd service
 	@echo "Restarting sosenki service..."
 	sudo systemctl restart sosenki
+
+start: ## Start the sosenki systemd service
+	@echo "Starting sosenki service..."
+	sudo systemctl start sosenki
 	
 # Database backup with timestamped filename (prod only)
 # Creates backups/sosenki-YYYYMMDD-HHMMSS.db, keeps last 30 backups

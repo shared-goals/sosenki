@@ -13,7 +13,7 @@ User=${USER}
 Group=${USER}
 WorkingDirectory=${INSTALL_DIR}
 EnvironmentFile=${INSTALL_DIR}/.env
-ExecStart=${INSTALL_DIR}/.venv/bin/python -m src.main --mode webhook
+ExecStart=${INSTALL_DIR}/.venv/bin/python -m src.main
 Restart=on-failure
 RestartSec=5
 
