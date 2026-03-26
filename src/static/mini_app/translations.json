@@ -144,7 +144,7 @@
   "msg_no_auction_properties": "Нет объектов на аукционе",
   "msg_no_auction_journal": "Журнал пуст",
   "msg_transaction_confirm": "📋 Новая транзакция:\n\n<b>От:</b> {from_name}\n<b>Кому:</b> {to_name}\n<b>Сумма:</b> {amount}\n<b>Дата:</b> {date}\n<b>Описание:</b> {description}\n\nСоздать транзакцию?",
-  "msg_transaction_created": "✅ Транзакция создана:\n\n<b>{description}</b>\n\nДата: {date}",
+  "msg_transaction_created": "✅ Транзакция создана:\n\n<b>От:</b> {from_name}\n<b>Кому:</b> {to_name}\n<b>Сумма:</b> {amount}\n<b>Дата:</b> {date}\n<b>Описание:</b> {description}",
   "msg_user_approved": "✅ Пользователь {user_id} одобрен и Telegram ID назначен",
   "msg_welcome": "Добро пожаловать в SOSenki! 🏠\n\nОтправьте /request боту для присоединения.",
   "prompt_budget_conservation": "Годовой бюджет консервации:",

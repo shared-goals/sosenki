@@ -662,8 +662,11 @@ async def _create_and_notify_payout_transaction(
 
             success_text = t(
                 "msg_transaction_created",
-                description=description,
+                from_name=from_account.name,
+                to_name=to_account.name,
+                amount=format_currency(amount),
                 date=transaction.transaction_date.strftime("%d.%m.%Y"),
+                description=description,
             )
 
             try:
