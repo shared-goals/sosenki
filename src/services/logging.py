@@ -10,6 +10,24 @@ import os
 import sys
 from pathlib import Path
 
+
+class HttpxTelegramPollingFilter(logging.Filter):
+    """Downgrade Telegram long-polling request logs to DEBUG.
+
+    This keeps periodic getUpdates noise out of INFO logs while preserving
+    visibility when LOG_LEVEL=DEBUG.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if (
+            record.name == "httpx"
+            and record.levelno == logging.INFO
+            and "getUpdates" in record.getMessage()
+        ):
+            record.levelno = logging.DEBUG
+            record.levelname = logging.getLevelName(logging.DEBUG)
+        return True
+
 # Map string level names to logging constants
 LOG_LEVEL_MAP = {
     "DEBUG": logging.DEBUG,
@@ -58,6 +76,9 @@ def setup_server_logging(log_file: str = "logs/server.log") -> None:
     # Get root logger
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
+
+    # Keep Telegram polling request noise out of INFO logs.
+    logging.getLogger("httpx").addFilter(HttpxTelegramPollingFilter())
 
     # Remove any existing handlers to avoid duplicates
     root_logger.handlers.clear()
