@@ -3,7 +3,7 @@
 from decimal import Decimal
 from enum import Enum
 
-from sqlalchemy import ForeignKey, Index, Numeric, String
+from sqlalchemy import ForeignKey, Index, Numeric, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.models import Base, BaseModel
@@ -100,6 +100,22 @@ class Bill(Base, BaseModel):
         Index("idx_bill_period_property", "service_period_id", "property_id"),
         Index("idx_bill_type", "bill_type"),
         Index("idx_bill_period_type", "service_period_id", "bill_type"),
+        Index(
+            "uq_bill_main_period_account",
+            "service_period_id",
+            "account_id",
+            unique=True,
+            sqlite_where=text("bill_type = 'main'"),
+            postgresql_where=text("bill_type = 'main'"),
+        ),
+        Index(
+            "uq_bill_conservation_period_account",
+            "service_period_id",
+            "account_id",
+            unique=True,
+            sqlite_where=text("bill_type = 'conservation'"),
+            postgresql_where=text("bill_type = 'conservation'"),
+        ),
     )
 
     def __repr__(self) -> str:

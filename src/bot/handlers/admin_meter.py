@@ -54,6 +54,16 @@ _METER_KEYS = [
 ]
 
 
+def _build_property_button_text(
+    property_name: str,
+    owner_name: str | None,
+    subtitle: str,
+) -> str:
+    """Build two-line property button text with owner on the second line."""
+    owner_display = owner_name or t("empty_data")
+    return f"📊 {property_name} ({subtitle})\n👤 {owner_display}"
+
+
 def _clear_meter_context(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Clear all meter-related context data."""
     for key in _METER_KEYS:
@@ -138,7 +148,15 @@ async def _show_property_selection(  # noqa: C901
             # Build property selection keyboard - show properties with readings first
             keyboard = []
             for property_obj, latest_reading in properties_with_data:
-                button_text = f"📊 {property_obj.property_name} ({latest_reading.reading_date.strftime('%d.%m.%Y')}): {latest_reading.reading_value} {t('label_unit_kwh')}"
+                subtitle = (
+                    f"{latest_reading.reading_date.strftime('%d.%m.%Y')}: "
+                    f"{latest_reading.reading_value} {t('label_unit_kwh')}"
+                )
+                button_text = _build_property_button_text(
+                    property_name=property_obj.property_name,
+                    owner_name=property_obj.owner.name if property_obj.owner else None,
+                    subtitle=subtitle,
+                )
                 keyboard.append(
                     [
                         InlineKeyboardButton(
@@ -288,7 +306,11 @@ async def handle_show_empty_properties(update: Update, context: ContextTypes.DEF
             # Build keyboard with properties without readings
             keyboard = []
             for property_obj, _ in properties_without_data:
-                button_text = f"📊 {property_obj.property_name} ({t('empty_data')})"
+                button_text = _build_property_button_text(
+                    property_name=property_obj.property_name,
+                    owner_name=property_obj.owner.name if property_obj.owner else None,
+                    subtitle=t("empty_data"),
+                )
                 keyboard.append(
                     [
                         InlineKeyboardButton(

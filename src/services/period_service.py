@@ -114,6 +114,7 @@ class ServicePeriodService:
         """Get period where end_date equals given start_date.
 
         Used for fetching default electricity values from previous period.
+        If multiple periods match, prefer one with populated electricity defaults.
 
         Args:
             current_start_date: Start date of current period
@@ -121,7 +122,20 @@ class ServicePeriodService:
         Returns:
             Previous ServicePeriod or None if not found
         """
-        stmt = select(ServicePeriod).filter(ServicePeriod.end_date == current_start_date)
+        stmt = (
+            select(ServicePeriod)
+            .filter(ServicePeriod.end_date == current_start_date)
+            # Prefer rows that have electricity defaults filled.
+            .order_by(
+                ServicePeriod.electricity_end.is_(None).asc(),
+                ServicePeriod.electricity_rate.is_(None).asc(),
+                ServicePeriod.electricity_multiplier.is_(None).asc(),
+                ServicePeriod.electricity_losses.is_(None).asc(),
+                ServicePeriod.start_date.desc(),
+                ServicePeriod.id.desc(),
+            )
+            .limit(1)
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 

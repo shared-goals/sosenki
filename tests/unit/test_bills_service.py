@@ -399,6 +399,29 @@ async def test_create_main_bills(async_db_session, owner_accounts, service_perio
     assert all(bill.bill_type == BillType.MAIN for bill in created_bills)
 
 
+async def test_create_main_bills_prevents_duplicates(async_db_session, owner_accounts, service_period):
+    """Creating MAIN bills twice for the same period should fail."""
+    bills_service = BillsService(async_db_session)
+
+    calculations = [
+        (owner_accounts[0].user_id, Decimal("500.00")),
+    ]
+
+    created = await bills_service.create_main_bills(
+        period_id=service_period.id,
+        calculations=calculations,
+        actor_id=None,
+    )
+    assert created == 1
+
+    with pytest.raises(ValueError, match="MAIN bills already exist"):
+        await bills_service.create_main_bills(
+            period_id=service_period.id,
+            calculations=calculations,
+            actor_id=None,
+        )
+
+
 async def test_create_main_bills_with_missing_account(async_db_session, service_period):
     """Test create_main_bills skips missing accounts."""
     bills_service = BillsService(async_db_session)
@@ -441,6 +464,64 @@ async def test_create_conservation_bills(async_db_session, owner_accounts, servi
     )
     created_bills = list(bills.scalars().all())
     assert all(bill.bill_type == BillType.CONSERVATION for bill in created_bills)
+
+
+async def test_create_conservation_bills_prevents_duplicates(
+    async_db_session, owner_accounts, service_period
+):
+    """Creating CONSERVATION bills twice for the same period should fail."""
+    bills_service = BillsService(async_db_session)
+
+    calculations = [
+        (owner_accounts[0].user_id, Decimal("250.00")),
+    ]
+
+    created = await bills_service.create_conservation_bills(
+        period_id=service_period.id,
+        calculations=calculations,
+        actor_id=None,
+    )
+    assert created == 1
+
+    with pytest.raises(ValueError, match="CONSERVATION bills already exist"):
+        await bills_service.create_conservation_bills(
+            period_id=service_period.id,
+            calculations=calculations,
+            actor_id=None,
+        )
+
+
+async def test_count_budget_bills_for_period(async_db_session, owner_accounts, service_period):
+    """Budget bill counter should include MAIN and CONSERVATION types."""
+    bills_service = BillsService(async_db_session)
+
+    await bills_service.create_main_bills(
+        period_id=service_period.id,
+        calculations=[(owner_accounts[0].user_id, Decimal("100.00"))],
+        actor_id=None,
+    )
+
+    # Create conservation for a different period to keep per-period count deterministic.
+    other_period = ServicePeriod(
+        start_date=date(2025, 2, 1),
+        end_date=date(2025, 2, 28),
+        name="February 2025",
+        status="open",
+    )
+    async_db_session.add(other_period)
+    await async_db_session.commit()
+
+    await bills_service.create_conservation_bills(
+        period_id=other_period.id,
+        calculations=[(owner_accounts[0].user_id, Decimal("100.00"))],
+        actor_id=None,
+    )
+
+    count_current = await bills_service.count_budget_bills_for_period(service_period.id)
+    count_other = await bills_service.count_budget_bills_for_period(other_period.id)
+
+    assert count_current == 1
+    assert count_other == 1
 
 
 async def test_bills_service_with_multiple_properties_per_owner(async_db_session, owner_users):

@@ -265,6 +265,7 @@ async def handle_period_selection(  # noqa: C901
 
         async with AsyncSessionLocal() as session:
             period_service = ServicePeriodService(session)
+            bills_service = BillsService(session)
 
             # Extract period ID
             try:
@@ -285,7 +286,9 @@ async def handle_period_selection(  # noqa: C901
             context.user_data["bills_period_id"] = period_id
             context.user_data["bills_period_name"] = period.name
 
-            # Show 2 action buttons
+            budget_bills_count = await bills_service.count_budget_bills_for_period(period_id)
+
+            # Show action buttons. Hide budget action if budget bills already exist.
             buttons = [
                 [
                     InlineKeyboardButton(
@@ -293,19 +296,30 @@ async def handle_period_selection(  # noqa: C901
                         callback_data=f"bill_action:readings:{period_id}",
                     )
                 ],
-                [
-                    InlineKeyboardButton(
-                        t("btn_create_by_budget"),
-                        callback_data=f"bill_action:budget:{period_id}",
-                    )
-                ],
             ]
+            if budget_bills_count == 0:
+                buttons.append(
+                    [
+                        InlineKeyboardButton(
+                            t("btn_create_by_budget"),
+                            callback_data=f"bill_action:budget:{period_id}",
+                        )
+                    ]
+                )
             keyboard = InlineKeyboardMarkup(buttons)
 
-            await cq.edit_message_text(
-                t("msg_bills_action", period_name=period.name),
-                reply_markup=keyboard,
-            )
+            message = t("msg_bills_action", period_name=period.name)
+            if budget_bills_count > 0:
+                message = (
+                    f"{message}\n\n"
+                    + t(
+                        "err_budget_bills_already_created",
+                        period_name=period.name,
+                        count=budget_bills_count,
+                    )
+                )
+
+            await cq.edit_message_text(message, reply_markup=keyboard)
 
             return States.SELECT_ACTION
 
@@ -338,6 +352,19 @@ async def handle_action_selection(  # noqa: C901
             # Route to electricity workflow
             return await _start_electricity_workflow(update, context, period_id)
         elif action == "budget":
+            async with AsyncSessionLocal() as session:
+                bills_service = BillsService(session)
+                existing_budget_count = await bills_service.count_budget_bills_for_period(period_id)
+                if existing_budget_count > 0:
+                    period_name = context.user_data.get("bills_period_name", "")
+                    await cq.edit_message_text(
+                        t(
+                            "err_budget_bills_already_created",
+                            period_name=period_name,
+                            count=existing_budget_count,
+                        )
+                    )
+                    return States.END
             # Route to budget workflow
             return await _start_budget_workflow(update, context, period_id)
         else:
@@ -1094,19 +1121,46 @@ async def handle_budget_create_bills(  # noqa: C901
             admin_user = context.user_data.get("authorized_admin")
             actor_id = admin_user.id if admin_user else None
 
-            # Create MAIN bills
-            main_count = await bills_service.create_main_bills(
-                period_id=period_id,
-                calculations=main_calculations,
-                actor_id=actor_id,
-            )
+            # Guard: fail if any budget bills already exist for this period
+            existing_budget_count = await bills_service.count_budget_bills_for_period(period_id)
+            if existing_budget_count > 0:
+                await cq.edit_message_text(
+                    t(
+                        "err_budget_bills_already_created",
+                        period_name=period_name,
+                        count=existing_budget_count,
+                    )
+                )
+                _clear_budget_context(context)
+                return States.END
 
-            # Create CONSERVATION bills
-            conservation_count = await bills_service.create_conservation_bills(
-                period_id=period_id,
-                calculations=conservation_calculations,
-                actor_id=actor_id,
-            )
+            try:
+                # Create MAIN bills
+                main_count = await bills_service.create_main_bills(
+                    period_id=period_id,
+                    calculations=main_calculations,
+                    actor_id=actor_id,
+                )
+
+                # Create CONSERVATION bills
+                conservation_count = await bills_service.create_conservation_bills(
+                    period_id=period_id,
+                    calculations=conservation_calculations,
+                    actor_id=actor_id,
+                )
+            except ValueError as exc:
+                if "already exist for period" in str(exc):
+                    refreshed_count = await bills_service.count_budget_bills_for_period(period_id)
+                    await cq.edit_message_text(
+                        t(
+                            "err_budget_bills_already_created",
+                            period_name=period_name,
+                            count=refreshed_count,
+                        )
+                    )
+                    _clear_budget_context(context)
+                    return States.END
+                raise
 
             # Update period with budget data
             await period_service.update_budget_data(

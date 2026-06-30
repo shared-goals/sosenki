@@ -51,6 +51,7 @@
   "err_meter_value_less_than_previous": "❌ Показание ({value} кВт·ч) не может быть меньше предыдущего ({previous} кВт·ч)",
   "err_meter_value_not_positive": "❌ Показание счётчика должно быть положительным числом",
   "err_electricity_bills_already_created": "❌ Для периода '{period_name}' уже есть счета за электричество (шт: {count}).",
+  "err_budget_bills_already_created": "❌ Для периода '{period_name}' уже есть бюджетные счета (шт: {count}).",
   "err_network": "Ошибка сети. Пожалуйста, проверьте соединение и попробуйте снова.",
   "err_network_retry": "Проблемы со связью, попробуйте позже.",
   "err_not_investor": "❌ Доступно только инвесторам",

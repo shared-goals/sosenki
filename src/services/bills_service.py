@@ -104,6 +104,19 @@ class BillsService:
         )
         return int(result.scalar() or 0)
 
+    async def count_budget_bills_for_period(self, service_period_id: int) -> int:
+        """Count any budget-related bills for the given period.
+
+        Includes both MAIN and CONSERVATION bills.
+        """
+        result = await self.session.execute(
+            select(func.count(Bill.id)).where(
+                (Bill.service_period_id == service_period_id)
+                & (Bill.bill_type.in_([BillType.MAIN, BillType.CONSERVATION]))
+            )
+        )
+        return int(result.scalar() or 0)
+
     async def calculate_personal_electricity_bills_from_readings(
         self,
         *,
@@ -466,6 +479,14 @@ class BillsService:
         Returns:
             Number of bills created
         """
+        existing_count = await self.session.execute(
+            select(func.count(Bill.id)).where(
+                (Bill.service_period_id == period_id) & (Bill.bill_type == BillType.MAIN)
+            )
+        )
+        if int(existing_count.scalar() or 0) > 0:
+            raise ValueError(f"MAIN bills already exist for period {period_id}")
+
         bills_created = 0
 
         for calculation in calculations:
@@ -538,6 +559,14 @@ class BillsService:
         Returns:
             Number of bills created
         """
+        existing_count = await self.session.execute(
+            select(func.count(Bill.id)).where(
+                (Bill.service_period_id == period_id) & (Bill.bill_type == BillType.CONSERVATION)
+            )
+        )
+        if int(existing_count.scalar() or 0) > 0:
+            raise ValueError(f"CONSERVATION bills already exist for period {period_id}")
+
         bills_created = 0
 
         for calculation in calculations:

@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.models.electricity_reading import ElectricityReading
 from src.models.property import Property
@@ -31,7 +32,12 @@ class ElectricityReadingService:
             List of tuples (Property, ElectricityReading or None)
         """
         # Get all properties
-        stmt = select(Property).where(Property.is_active).order_by(Property.property_name)
+        stmt = (
+            select(Property)
+            .options(selectinload(Property.owner))
+            .where(Property.is_active)
+            .order_by(Property.property_name)
+        )
         result = await self.session.execute(stmt)
         properties = result.scalars().all()
 

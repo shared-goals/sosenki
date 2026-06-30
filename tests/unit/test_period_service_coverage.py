@@ -179,6 +179,74 @@ async def test_period_service_get_previous_period_defaults_none(async_db_session
     assert result.electricity_losses is None
 
 
+async def test_previous_period_prefers_populated_electricity_end(async_db_session):
+    """Prefer period with populated electricity_end when end_date duplicates exist."""
+    empty_defaults = ServicePeriod(
+        start_date=date(2025, 1, 1),
+        end_date=date(2025, 2, 1),
+        name="Previous Empty",
+        status="closed",
+        electricity_end=None,
+        electricity_multiplier=Decimal("1.1"),
+        electricity_rate=Decimal("5.1"),
+        electricity_losses=Decimal("0.1"),
+    )
+    populated_defaults = ServicePeriod(
+        start_date=date(2024, 12, 1),
+        end_date=date(2025, 2, 1),
+        name="Previous Populated",
+        status="closed",
+        electricity_end=Decimal("321"),
+        electricity_multiplier=Decimal("1.2"),
+        electricity_rate=Decimal("5.2"),
+        electricity_losses=Decimal("0.2"),
+    )
+    async_db_session.add_all([empty_defaults, populated_defaults])
+    await async_db_session.commit()
+
+    service = ServicePeriodService(async_db_session)
+    defaults = await service.get_previous_period_defaults(date(2025, 2, 1))
+
+    assert defaults.electricity_end is not None
+    assert "321" in defaults.electricity_end
+    assert "1.2" in defaults.electricity_multiplier
+    assert "5.2" in defaults.electricity_rate
+    assert "0.2" in defaults.electricity_losses
+
+
+async def test_previous_period_tie_breaks_by_recency(async_db_session):
+    """When all candidates are populated, choose the most recent one deterministically."""
+    older = ServicePeriod(
+        start_date=date(2024, 11, 1),
+        end_date=date(2025, 2, 1),
+        name="Previous Older",
+        status="closed",
+        electricity_end=Decimal("111"),
+        electricity_multiplier=Decimal("1.1"),
+        electricity_rate=Decimal("5.1"),
+        electricity_losses=Decimal("0.1"),
+    )
+    newer = ServicePeriod(
+        start_date=date(2025, 1, 1),
+        end_date=date(2025, 2, 1),
+        name="Previous Newer",
+        status="closed",
+        electricity_end=Decimal("222"),
+        electricity_multiplier=Decimal("1.3"),
+        electricity_rate=Decimal("5.3"),
+        electricity_losses=Decimal("0.3"),
+    )
+    async_db_session.add_all([older, newer])
+    await async_db_session.commit()
+
+    service = ServicePeriodService(async_db_session)
+    previous_period = await service.get_previous_period(date(2025, 2, 1))
+
+    assert previous_period is not None
+    assert previous_period.name == "Previous Newer"
+    assert previous_period.electricity_end == Decimal("222")
+
+
 async def test_period_service_list_periods(async_db_session):
     """Test listing periods."""
     period1 = ServicePeriod(
