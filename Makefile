@@ -385,6 +385,7 @@ backup: ## Backup prod database (prod-only, keeps last 30)
 		echo ""; \
 		echo "Cleaning old backups (keeping last 30)..."; \
 		cd backups && ls -t *.db 2>/dev/null | tail -n +31 | xargs -r rm -v; \
+		cd ..; \
 	fi; \
 	echo ""; \
 	echo "Current backups:"; \
