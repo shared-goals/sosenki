@@ -33,6 +33,19 @@ from src.bot.handlers.admin_bills import (
     handle_electricity_rate,
     handle_period_selection,
 )
+from src.bot.handlers.admin_accounts import (
+    States as AccountsStates,
+)
+from src.bot.handlers.admin_accounts import (
+    handle_accounts_action_selection,
+    handle_accounts_cancel,
+    handle_accounts_command,
+    handle_accounts_create_name_input,
+    handle_accounts_delete_confirmation,
+    handle_accounts_delete_selection,
+    handle_accounts_update_name_input,
+    handle_accounts_update_selection,
+)
 from src.bot.handlers.admin_meter import (
     States as MeterStates,
 )
@@ -313,6 +326,47 @@ async def create_bot_app() -> Application:
         per_message=False,
     )
     app.add_handler(payout_conv)
+
+    # Register account management command with ConversationHandler
+    accounts_conv = ConversationHandler(
+        entry_points=[CommandHandler("accounts", handle_accounts_command)],
+        states={
+            AccountsStates.SELECT_ACTION: [
+                CallbackQueryHandler(
+                    handle_accounts_action_selection,
+                    pattern="^accounts_action:",
+                )
+            ],
+            AccountsStates.INPUT_CREATE_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_accounts_create_name_input)
+            ],
+            AccountsStates.SELECT_ACCOUNT_FOR_UPDATE: [
+                CallbackQueryHandler(
+                    handle_accounts_update_selection,
+                    pattern="^accounts_update_select:",
+                )
+            ],
+            AccountsStates.INPUT_UPDATE_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_accounts_update_name_input)
+            ],
+            AccountsStates.SELECT_ACCOUNT_FOR_DELETE: [
+                CallbackQueryHandler(
+                    handle_accounts_delete_selection,
+                    pattern="^accounts_delete_select:",
+                )
+            ],
+            AccountsStates.CONFIRM_DELETE: [
+                CallbackQueryHandler(
+                    handle_accounts_delete_confirmation,
+                    pattern="^accounts_delete_confirm:",
+                )
+            ],
+        },
+        fallbacks=[CommandHandler("accounts", handle_accounts_cancel)],
+        allow_reentry=True,
+        per_message=False,
+    )
+    app.add_handler(accounts_conv)
 
     # Initialize any other bot-level setup here
 

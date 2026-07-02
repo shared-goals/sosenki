@@ -42,7 +42,13 @@ async def handle_start_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 commands.append("/ask")
 
             if user.is_administrator:
-                commands.extend(["/bills", "/periods", "/payout", "/meter"])
+                commands.extend([
+                    "/bills",
+                    "/periods",
+                    "/payout",
+                    "/meter",
+                    "/accounts",
+                ])
             elif user.is_staff:
                 commands.append("/meter")
 
