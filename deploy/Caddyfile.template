@@ -13,10 +13,10 @@ ${DOMAIN} {
     reverse_proxy localhost:8000
 
     # Logging
-    log {
-        output file /var/log/caddy/sosenki.log
-        format json
-    }
+    #log {
+    #    output file /var/log/caddy/sosenki.log
+    #    format json
+    #}
 
     # Headers for Telegram Web App
     header {

@@ -18,10 +18,10 @@ Restart=on-failure
 RestartSec=5
 
 # Logging - systemd creates /var/log/sosenki with correct user ownership
-LogsDirectory=sosenki
-LogsDirectoryMode=0750
-StandardOutput=append:%L/sosenki/server.log
-StandardError=append:%L/sosenki/server.log
+#LogsDirectory=sosenki
+#LogsDirectoryMode=0750
+#StandardOutput=append:%L/sosenki/server.log
+#StandardError=append:%L/sosenki/server.log
 
 # Hardening
 NoNewPrivileges=true
