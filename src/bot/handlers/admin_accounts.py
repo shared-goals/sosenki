@@ -1,9 +1,10 @@
 """Admin account management handlers with conversation state machine."""
 
 import logging
+from dataclasses import dataclass
 
 from sqlalchemy import func, or_, select
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from src.models.account import Account, AccountType
@@ -141,7 +142,9 @@ async def handle_accounts_command(update: Update, context: ContextTypes.DEFAULT_
         return States.END
 
 
-async def handle_accounts_action_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_accounts_action_selection(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     """Handle action selection for /accounts workflow."""
     try:
         cq = update.callback_query
@@ -153,54 +156,62 @@ async def handle_accounts_action_selection(update: Update, context: ContextTypes
 
         action = cq.data.split(":", maxsplit=1)[1]
         async with AsyncSessionLocal() as session:
-            if action == "list":
-                accounts = await _get_organization_accounts(session)
-                if not accounts:
-                    await cq.edit_message_text(t("msg_accounts_empty"))
-                    return States.END
-
-                lines = [t("msg_accounts_list_title"), ""]
-                lines.extend([f"• {account.id}: {account.name}" for account in accounts])
-                await cq.edit_message_text("\n".join(lines))
-                return States.END
-
-            if action == "create":
-                await cq.edit_message_text(t("prompt_accounts_create_name"))
-                return States.INPUT_CREATE_NAME
-
-            if action == "update":
-                accounts = await _get_organization_accounts(session)
-                if not accounts:
-                    await cq.edit_message_text(t("msg_accounts_empty"))
-                    return States.END
-
-                await cq.edit_message_text(
-                    t("prompt_accounts_update_select"),
-                    reply_markup=_build_accounts_keyboard(accounts, "update_select"),
-                )
-                return States.SELECT_ACCOUNT_FOR_UPDATE
-
-            if action == "delete":
-                accounts = await _get_organization_accounts(session)
-                if not accounts:
-                    await cq.edit_message_text(t("msg_accounts_empty"))
-                    return States.END
-
-                await cq.edit_message_text(
-                    t("prompt_accounts_delete_select"),
-                    reply_markup=_build_accounts_keyboard(accounts, "delete_select"),
-                )
-                return States.SELECT_ACCOUNT_FOR_DELETE
-
-            await cq.edit_message_text(t("err_unknown_action"))
-            return States.END
-
+            return await _dispatch_accounts_action(cq, action, session)
     except Exception as e:
         logger.error("Error in accounts action selection: %s", e, exc_info=True)
         cq = update.callback_query
         if cq and cq.message:
             await cq.message.reply_text(t("err_processing"))
         return States.END
+
+
+async def _dispatch_accounts_action(
+    cq: CallbackQuery,
+    action: str,
+    session,  # noqa: ANN001
+) -> int:
+    """Route a selected /accounts action callback to its handler."""
+    if action == "list":
+        accounts = await _get_organization_accounts(session)
+        if not accounts:
+            await cq.edit_message_text(t("msg_accounts_empty"))
+            return States.END
+
+        lines = [t("msg_accounts_list_title"), ""]
+        lines.extend([f"• {account.id}: {account.name}" for account in accounts])
+        await cq.edit_message_text("\n".join(lines))
+        return States.END
+
+    if action == "create":
+        await cq.edit_message_text(t("prompt_accounts_create_name"))
+        return States.INPUT_CREATE_NAME
+
+    if action == "update":
+        accounts = await _get_organization_accounts(session)
+        if not accounts:
+            await cq.edit_message_text(t("msg_accounts_empty"))
+            return States.END
+
+        await cq.edit_message_text(
+            t("prompt_accounts_update_select"),
+            reply_markup=_build_accounts_keyboard(accounts, "update_select"),
+        )
+        return States.SELECT_ACCOUNT_FOR_UPDATE
+
+    if action == "delete":
+        accounts = await _get_organization_accounts(session)
+        if not accounts:
+            await cq.edit_message_text(t("msg_accounts_empty"))
+            return States.END
+
+        await cq.edit_message_text(
+            t("prompt_accounts_delete_select"),
+            reply_markup=_build_accounts_keyboard(accounts, "delete_select"),
+        )
+        return States.SELECT_ACCOUNT_FOR_DELETE
+
+    await cq.edit_message_text(t("err_unknown_action"))
+    return States.END
 
 
 async def handle_accounts_create_name_input(
@@ -243,7 +254,9 @@ async def handle_accounts_create_name_input(
                 )
                 return States.END
 
-            account = Account(name=account_name, account_type=AccountType.ORGANIZATION, user_id=None)
+            account = Account(
+                name=account_name, account_type=AccountType.ORGANIZATION, user_id=None
+            )
             session.add(account)
             await session.flush()
 
@@ -270,7 +283,9 @@ async def handle_accounts_create_name_input(
         return States.END
 
 
-async def handle_accounts_update_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_accounts_update_selection(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     """Handle organization account selection for update action."""
     try:
         cq = update.callback_query
@@ -306,32 +321,13 @@ async def handle_accounts_update_name_input(
 ) -> int:
     """Handle new account name input for update action."""
     try:
-        if not update.message or not update.message.text:
-            return States.END
-
-        if context.user_data is None:
-            return States.END
-
-        account_id = context.user_data.get("accounts_selected_account_id")
-        old_name = context.user_data.get("accounts_selected_account_name")
-        if not account_id:
-            await update.message.reply_text(t("err_account_not_found"))
-            return States.END
-
-        new_name = update.message.text.strip()
-        if not new_name:
-            await update.message.reply_text(t("err_account_name_required"))
+        prep = await _prepare_update_context(update, context)
+        if prep.outcome == "retry":
             return States.INPUT_UPDATE_NAME
-
-        if len(new_name) > 100:
-            await update.message.reply_text(t("err_account_name_too_long"))
-            return States.INPUT_UPDATE_NAME
-
-        admin_user = context.user_data.get("authorized_admin")
-        if not admin_user:
-            await update.message.reply_text(t("err_not_authorized"))
+        if prep.outcome != "proceed":
             return States.END
 
+        account_id, old_name, new_name, admin_user = prep.value
         async with AsyncSessionLocal() as session:
             account = await session.get(Account, account_id)
             if not account or account.account_type != AccountType.ORGANIZATION:
@@ -379,7 +375,50 @@ async def handle_accounts_update_name_input(
         return States.END
 
 
-async def handle_accounts_delete_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+@dataclass(frozen=True)
+class _UpdatePrepare:
+    """Result of validating an update-name input before applying the change."""
+
+    outcome: str  # "proceed", "retry" or "abort"
+    value: tuple[int, str | None, str, int | None] = (0, None, "", None)
+
+
+async def _prepare_update_context(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> _UpdatePrepare:
+    """Validate update-name input and return the parsed values or a sentinel."""
+    if not update.message or not update.message.text:
+        return _UpdatePrepare("abort")
+
+    if context.user_data is None:
+        return _UpdatePrepare("abort")
+
+    account_id = context.user_data.get("accounts_selected_account_id")
+    old_name = context.user_data.get("accounts_selected_account_name")
+    if not account_id:
+        await update.message.reply_text(t("err_account_not_found"))
+        return _UpdatePrepare("abort")
+
+    new_name = update.message.text.strip()
+    if not new_name:
+        await update.message.reply_text(t("err_account_name_required"))
+        return _UpdatePrepare("retry")
+
+    if len(new_name) > 100:
+        await update.message.reply_text(t("err_account_name_too_long"))
+        return _UpdatePrepare("retry")
+
+    admin_user = context.user_data.get("authorized_admin")
+    if not admin_user:
+        await update.message.reply_text(t("err_not_authorized"))
+        return _UpdatePrepare("abort")
+
+    return _UpdatePrepare("proceed", (account_id, old_name, new_name, admin_user))
+
+
+async def handle_accounts_delete_selection(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     """Handle organization account selection for delete action."""
     try:
         cq = update.callback_query
@@ -402,8 +441,12 @@ async def handle_accounts_delete_selection(update: Update, context: ContextTypes
             keyboard = InlineKeyboardMarkup(
                 [
                     [
-                        InlineKeyboardButton(t("btn_yes"), callback_data="accounts_delete_confirm:yes"),
-                        InlineKeyboardButton(t("btn_no"), callback_data="accounts_delete_confirm:no"),
+                        InlineKeyboardButton(
+                            t("btn_yes"), callback_data="accounts_delete_confirm:yes"
+                        ),
+                        InlineKeyboardButton(
+                            t("btn_no"), callback_data="accounts_delete_confirm:no"
+                        ),
                     ]
                 ]
             )
@@ -421,7 +464,9 @@ async def handle_accounts_delete_selection(update: Update, context: ContextTypes
         return States.END
 
 
-async def handle_accounts_delete_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_accounts_delete_confirmation(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     """Handle confirmation for delete action."""
     try:
         cq = update.callback_query
@@ -453,7 +498,10 @@ async def handle_accounts_delete_confirmation(update: Update, context: ContextTy
                 return States.END
 
             tx_count_stmt = select(func.count(Transaction.id)).where(
-                or_(Transaction.from_account_id == account_id, Transaction.to_account_id == account_id)
+                or_(
+                    Transaction.from_account_id == account_id,
+                    Transaction.to_account_id == account_id,
+                )
             )
             tx_count_result = await session.execute(tx_count_stmt)
             tx_count = tx_count_result.scalar_one()

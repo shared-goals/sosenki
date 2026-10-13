@@ -1,5 +1,15 @@
 """Bot handlers package - command, requests, and conversation handlers."""
 
+from src.bot.handlers.admin_accounts import (
+    handle_accounts_action_selection,
+    handle_accounts_cancel,
+    handle_accounts_command,
+    handle_accounts_create_name_input,
+    handle_accounts_delete_confirmation,
+    handle_accounts_delete_selection,
+    handle_accounts_update_name_input,
+    handle_accounts_update_selection,
+)
 from src.bot.handlers.admin_bills import (
     handle_action_selection,
     handle_bills_cancel,
@@ -15,16 +25,6 @@ from src.bot.handlers.admin_bills import (
     handle_electricity_rate,
     handle_period_selection,
 )
-from src.bot.handlers.admin_accounts import (
-    handle_accounts_action_selection,
-    handle_accounts_cancel,
-    handle_accounts_command,
-    handle_accounts_create_name_input,
-    handle_accounts_delete_confirmation,
-    handle_accounts_delete_selection,
-    handle_accounts_update_name_input,
-    handle_accounts_update_selection,
-)
 from src.bot.handlers.admin_periods import (
     handle_close_period_confirmation,
     handle_period_action_selection,
@@ -34,6 +34,7 @@ from src.bot.handlers.admin_periods import (
 )
 from src.bot.handlers.admin_requests import handle_admin_callback, handle_admin_response
 from src.bot.handlers.common import handle_request_command, handle_start_command
+from src.bot.handlers.debts import handle_debts_command
 
 __all__ = [
     # Common handlers
@@ -71,4 +72,6 @@ __all__ = [
     "handle_budget_main_input",
     "handle_budget_conservation_input",
     "handle_budget_create_bills",
+    # Debts
+    "handle_debts_command",
 ]

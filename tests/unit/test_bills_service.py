@@ -399,7 +399,9 @@ async def test_create_main_bills(async_db_session, owner_accounts, service_perio
     assert all(bill.bill_type == BillType.MAIN for bill in created_bills)
 
 
-async def test_create_main_bills_prevents_duplicates(async_db_session, owner_accounts, service_period):
+async def test_create_main_bills_prevents_duplicates(
+    async_db_session, owner_accounts, service_period
+):
     """Creating MAIN bills twice for the same period should fail."""
     bills_service = BillsService(async_db_session)
 

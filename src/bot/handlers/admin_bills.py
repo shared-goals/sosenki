@@ -310,13 +310,10 @@ async def handle_period_selection(  # noqa: C901
 
             message = t("msg_bills_action", period_name=period.name)
             if budget_bills_count > 0:
-                message = (
-                    f"{message}\n\n"
-                    + t(
-                        "err_budget_bills_already_created",
-                        period_name=period.name,
-                        count=budget_bills_count,
-                    )
+                message = f"{message}\n\n" + t(
+                    "err_budget_bills_already_created",
+                    period_name=period.name,
+                    count=budget_bills_count,
                 )
 
             await cq.edit_message_text(message, reply_markup=keyboard)

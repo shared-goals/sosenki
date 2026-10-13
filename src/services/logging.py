@@ -28,6 +28,7 @@ class HttpxTelegramPollingFilter(logging.Filter):
             record.levelname = logging.getLevelName(logging.DEBUG)
         return True
 
+
 # Map string level names to logging constants
 LOG_LEVEL_MAP = {
     "DEBUG": logging.DEBUG,

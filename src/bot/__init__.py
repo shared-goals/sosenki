@@ -18,6 +18,19 @@ from telegram.request import HTTPXRequest
 from telegram.warnings import PTBUserWarning
 
 from src.bot.config import bot_config
+from src.bot.handlers.admin_accounts import (
+    States as AccountsStates,
+)
+from src.bot.handlers.admin_accounts import (
+    handle_accounts_action_selection,
+    handle_accounts_cancel,
+    handle_accounts_command,
+    handle_accounts_create_name_input,
+    handle_accounts_delete_confirmation,
+    handle_accounts_delete_selection,
+    handle_accounts_update_name_input,
+    handle_accounts_update_selection,
+)
 from src.bot.handlers.admin_bills import (
     handle_action_selection,
     handle_bills_cancel,
@@ -32,19 +45,6 @@ from src.bot.handlers.admin_bills import (
     handle_electricity_multiplier,
     handle_electricity_rate,
     handle_period_selection,
-)
-from src.bot.handlers.admin_accounts import (
-    States as AccountsStates,
-)
-from src.bot.handlers.admin_accounts import (
-    handle_accounts_action_selection,
-    handle_accounts_cancel,
-    handle_accounts_command,
-    handle_accounts_create_name_input,
-    handle_accounts_delete_confirmation,
-    handle_accounts_delete_selection,
-    handle_accounts_update_name_input,
-    handle_accounts_update_selection,
 )
 from src.bot.handlers.admin_meter import (
     States as MeterStates,
@@ -88,6 +88,7 @@ from src.bot.handlers.admin_periods import (
 from src.bot.handlers.admin_requests import handle_admin_callback, handle_admin_response
 from src.bot.handlers.ask import handle_ask_command
 from src.bot.handlers.common import handle_request_command, handle_start_command
+from src.bot.handlers.debts import handle_debts_command
 from src.services.localizer import t
 
 logger = logging.getLogger(__name__)
@@ -146,6 +147,8 @@ async def create_bot_app() -> Application:
     app.add_handler(CommandHandler("start", handle_start_command))
     # T031/T032: Register /request command handler
     app.add_handler(CommandHandler("request", handle_request_command))
+    # Lists all owner debts (largest to smallest) - admin/staff/owners view
+    app.add_handler(CommandHandler("debts", handle_debts_command))
     # /ask command handler for natural language AI queries
     app.add_handler(CommandHandler("ask", handle_ask_command))
     # Unified admin response handler: handles both Approve and Reject replies
